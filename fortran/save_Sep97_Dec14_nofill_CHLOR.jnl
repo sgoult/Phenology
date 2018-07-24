@@ -1,0 +1,11 @@
+can dat/all
+can var/all
+can reg/all
+
+use CCI_ALL-v3.0-8DAY-Sep97-Dec15_9kmba.nc
+use 9km_guinea_landmask.nc !d=2 global
+
+let chl = chlor_a[d=1]*global[d=2,l=1]
+
+save/clobber/file=CCI_ALL-v3.0-8DAY-Sep97-Dec14_9kmba.nc chl[l=1]
+repeat/l=2:798 save/file=CCI_ALL-v3.0-8DAY-Sep97-Dec14_9kmba.nc/append chl

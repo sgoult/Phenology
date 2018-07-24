@@ -1,0 +1,18 @@
+cancel data/all
+cancel var/all
+cancel reg/all
+
+ppl tics 0.125,0.30,0.125,0.30,1,1
+ppl axnmtc 0,0
+ppl axlint 1,2
+ppl cross 0
+ppl axnsig 1,2
+ppl axset 1,1,1,1
+ppl axlsze 0.13, 0.15
+
+use CCIv3-8DAY-Jan97-Dec14_9km_fillphenob.nc
+
+let chl = chl_fill[l=@sbx:3]
+
+save/clobber/file=OCCCI_v3-8DAY-97_14_9km_pheno_fav8_sbx3weeks.nc chl[l=1]
+repeat/l=2:828 save/file=OCCCI_v3-8DAY-97_14_9km_pheno_fav8_sbx3weeks.nc/append chl

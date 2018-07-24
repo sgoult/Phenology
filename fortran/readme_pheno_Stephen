@@ -1,0 +1,81 @@
+Steps to calculate phenology 1 bloom:
+
+It starts with the chlorophyll data at 9km and 8-day resolution (saved in the same folder)
+
+1. fill_on_time_chl_v2.jnl
+it takes CCI_ALL-v3.0-8DAY-Sep97-Dec15_9kmba.nc
+it creates CCI_ALL-v3.0-8DAY-Sep97-Dec15_9kmba_fillphenob.nc
+
+2. save_18yr_8d_v2.f
+it takes CCI_ALL-v3.0-8DAY-Sep97-Dec15_9kmba_fillphenob.nc
+it creates CCIv3-8DAY-Jan97-Dec14_9km_fillphenob.nc
+
+3. apply_sbx3weeks.jnl
+it takes CCIv3-8DAY-Jan97-Dec14_9km_fillphenob.nc
+it creates OCCCI_v3-8DAY-97_14_9km_pheno_fav8_sbx3weeks.nc
+
+4. save_Sep97_Dec14_nofill_CHLOR.jnl
+it takes CCI_ALL-v3.0-8DAY-Sep97-Dec15_9kmba.nc and 9km_guinea_landmask.nc
+it creates CCI_ALL-v3.0-8DAY-Sep97-Dec14_9kmba.nc
+
+5. bmed5_GoG_OCCCI_8d.f
+it calculates the median chlorophyll over the entire time-series 1997-2014
+it takes CCI_ALL-v3.0-8DAY-Sep97-Dec14_9kmba.nc
+it creates bmed5_GoG_OCCCI_8d.nc
+
+6. bdefGoG_OCCCI_case_CIV.f
+it identifies the timing of chlorophyll peak each year
+it takes OCCCI_v3-8DAY-97_14_9km_pheno_fav8_sbx3weeks.nc
+it creates bdef98.nc ....to  bdef14.nc
+
+7. mergebdef_GoG_OCCCI_case_CIV.f
+it put together all the years (1 file per year)
+it takes bdef98.nc ....to  bdef14.nc
+it creates mergedbdef_GoG_OCCCI_case_CIV.nc
+
+8. bdefGoG_OCCCI_c2_CIV_v4.f
+it estimates the phenology (i.e., timings of initiation, peak, termination and duration) by using using a threshold criterion of long-term median plus 20%
+it takes 3 input files: 
+OCCCI_v3-8DAY-97_14_9km_pheno_fav8_sbx3weeks.nc
+mergedbdef_GoG_OCCCI_case_CIV.nc
+bmed5_GoG_OCCCI_8d.nc
+it creates bdef98.nc ....to  bdef14.nc
+
+9. mergebdefGoG_OCCCI_c2_CIV_v4.f
+it put together all the years (1 file per year)
+it takes input files bdef98.nc ....to  bdef14.nc
+it creates mergedbdefGoG_OCCCI_c2_CIV_v4.nc
+
+10. To save and map the phenology data in Ferret:
+
+map_pheno_indices1bloom_upwelling_civ_v4.jnl
+it maps the phenology for date_start in the small region -12W to 5E, 1N to 7N
+it takes mergedbdefGoG_OCCCI_c2_CIV_v4.nc
+GEBCO_2014_2D_-11.979_1.021_4.9792_7.021.nc (which is a file of bathymetry at high-resolution)
+
+map_pheno_ANO_indices1bloom_upwelling_civ_v4.jnl
+it maps the phenology anomalies for date_start in the small region -12W to 5E, 1N to 7N
+it takes mergedbdefGoG_OCCCI_c2_CIV_v4.nc
+GEBCO_2014_2D_-11.979_1.021_4.9792_7.021.nc (which is a file of bathymetry at high-resolution)
+
+
+
+*************************************************************************
+Software and compiler:
+
+Fortran 90:
+info from my cshrc file:
+alias fnet 'gfortran \!* -lnetcdff -lnetcdf -I/usr/include -lhdf5_hl -lhdf5 -I/usr/include'
+if ($?LD_LIBRARY_PATH) then
+#    setenv LD_LIBRARY_PATH "$LD_LIBRARY_PATH":/opt/netcdf-4.0.1/lib
+     setenv LD_LIBRARY_PATH "$LD_LIBRARY_PATH":/usr/lib:/usr/lib64
+else
+    setenv LD_LIBRARY_PATH /usr/lib:/usr/lib64
+endif
+
+Ferret v6.82:
+source /usr/local/bin/ferret_paths.csh
+alias fern 'ferret -nojnl'
+with .ferret file to be copied in your home directory
+The content of the .ferret file is shown in dot_ferret.txt (in this folder)
+*************************************************************************

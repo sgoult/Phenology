@@ -1,0 +1,24 @@
+can dat/all
+can var/all
+can reg/all
+
+set mem/size=800
+use CCI_ALL-v3.0-8DAY-Sep97-Dec15_9kmba.nc
+use 9km_guinea_landmask.nc !d=2 global
+
+show data 
+show grid global[d=2] !9km grid
+
+let chl_fill = chlor_a[d=1,l=1:844@fav:8,x=@fav:8,y=@fav:8]*global[d=2,l=1]
+
+save/clobber/file=CCI_ALL-v3.0-8DAY-Sep97-Dec15_9kmba_fillphenob.nc chl_fill[l=1]
+repeat/l=2:844 save/file=CCI_ALL-v3.0-8DAY-Sep97-Dec15_9kmba_fillphenob.nc/append chl_fill
+
+
+message
+!for test
+let cc = if chl_fill[l=@ngd] gt 0 then chl_fill
+
+set win/cl 1
+can vie
+sha/lev=(0,300,20) 844-cc[l=@ngd]

@@ -1,0 +1,162 @@
+can dat/all
+can reg/all
+can var/all
+
+ppl tics 0.125,0.2,0.125,0.2,1,1
+ppl axnmtc 0,0
+ppl axlint 1,2
+ppl cross 0
+ppl axnsig 0,1
+ppl axset 1,1,1,1
+ppl axlsze 0.15, 0.15
+ppl pen 0,7
+
+set mem/size=800
+use mergedbdefGoG_OCCCI_c2_CIV_v4.nc
+use GEBCO_2014_2D_-11.979_1.021_4.9792_7.021.nc
+
+let startano = date_start[d=1,l=1:17] - date_start[d=1,l=@ave]
+
+set win/size=0.5/cl 1
+can vie
+ppl axlabp 0,-1
+
+set vi vlw1
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=1,x=-12:5,y=1:7] - date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "1998"
+
+!message
+set vi vlw2
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=2,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "1999"
+
+
+set vi vlw3
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=3,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2000"
+
+set vi vlw4
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=4,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2001"
+
+ppl axlabp -1,-1
+set vi vlw5
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=5,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2002"
+
+
+ppl axlabp 0,0
+set vi vmw1
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=6,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2003"
+
+
+set vi vmw2
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=7,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2004"
+
+set vi vmw3
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=8,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2005"
+
+set vi vmw4
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=9,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2006"
+
+ppl axlabp -1,0
+set vi vmw5
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=10,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2007"
+
+
+
+ppl axlabp 0,0
+set vi vrw1
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=11,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2008"
+
+set vi vrw2
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=12,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2009"
+
+set vi vrw3
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=13,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2010"
+
+set vi vrw4
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=14,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2011"
+
+ppl axlabp -1,0
+set vi vrw5
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/set date_start[d=1,l=15,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+ppl shakey 1, 0, 0.17, 4, , , -3.9, 0.1, 0.4, 0.7
+ppl shade
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2012"
+
+
+
+set win/size=0.5/cl 2
+can vie
+ppl axlabp 0,0
+
+set vi vlw1
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=16,x=-12:5,y=1:7] - date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2013"
+
+
+ppl axlabp -1,0
+set vi vlw2
+sha/xlim=-12:3:5/ylim=2:7:2/nol/lev=(-12,12,1)/pal=corel_pal.spk/nokey date_start[d=1,l=17,x=-12:5,y=1:7]- date_start[d=1,l=@ave,x=-12:5,y=1:7]
+polygon/nol/line=13/over {-5,-5,-2.5,-2.5},{4.5,8,8,4.5}
+sha/over/nol/nokey/pal=tan/lev=(0,10000) elevation[d=2]
+cont/over/nol/nokey/lev=(0)/color=black/line=1 elevation[d=2]
+LABEL -6.4,5.7,-1,,0.24 "2014"

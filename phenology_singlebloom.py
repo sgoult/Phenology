@@ -59,22 +59,27 @@ def get_start_index_and_duration(array_like):
     """
     array_like = list(array_like)
     max_val = max(array_like)
-    max_idx = array_like.index(max(array_like))
+    max_idx = array_like.index(max(array_like[20:-1]))
     if max_idx == 0:
+        #print "max is 0"
         return [-1000,-1000,-1000,-1000]
     forward = array_like[max_idx:-1]
     backward = array_like[0:max_idx]
     if not backward or not forward:
+        print backward, forward
         return [-1000,-1000,-1000,-1000]
     try:
         end_flip = next(x for x, elem in enumerate(forward) if elem < 0)
-        end_flip = max_idx + end_flip
+    except:
+        end_flip = next(x for x, elem in enumerate(forward) if elem <= min(forward))
+    end_flip = max_idx + end_flip
+    try:
         start_flip = next(x for x, elem in enumerate(list(reversed(backward))) if elem < 0)
     except:
-        return [-1000,-1000,-1000,-1000]
+        start_flip = next(x for x, elem in enumerate(list(reversed(backward))) if elem <= min(backward))
     start_flip = max_idx - (start_flip + 1)
-    duration = end_flip - start_flip
-    return [start_flip, max_idx, end_flip, duration]
+    duration = end_flip - start_flip 
+    return [start_flip  - 5, max_idx  - 5, end_flip  - 5, duration]
 
 def create_phenology_one_bloom():
     """
@@ -85,32 +90,55 @@ def create_phenology_one_bloom():
     #to convert to work with a list of files replace the logic from here
     ids = nc.Dataset("CCI_ALL-v3.0-8DAY-Sep97-Dec14_9kmba.nc")
     chl =  ids.variables["CHL"][:]
-    med5 =  numpy.median(chl,axis = 0)*1.05
+    med5 =  numpy.ma.median(chl,axis = 0)*1.05
     ids.close()
     ids = nc.Dataset("OCCCI_v3-8DAY-97_14_9km_pheno_fav8_sbx3weeks.nc")
-    chl = ids.variables["CHL_FILL"][:]
+    chl = ids.variables["CHL"][:]
     #to here. Should be doable to fill the numpy arrays in python.
     data=[]
+    create_chl_netcdf(med5, name="chl.nc")
     for year in range(0, chl.shape[0], 47):
         #create arrays from variable data again
-        array = chl[year:year+47,:,:,:]
+        prev_year = year - 5 if year > 0 else 0
+        next_year = year + 47
+        print year
+        array = chl[prev_year:next_year,:,:,:]
         max_dates = numpy.argmax(array, axis=0)
         min_dates = numpy.argmin(array, axis=0)
         max_vals = numpy.amax(array, axis=0)
         min_vals = numpy.amin(array, axis=0)
-        threshold_array = max_vals - max_vals*20
-        med0_array = array - (med5/1.05*1.2)
+        med0_array = array - med5/1.05*1.2
+        print med0_array.shape
         start_end_duration_array = numpy.apply_along_axis(get_start_index_and_duration, 0, med0_array)
         print start_end_duration_array.shape
         data.append(start_end_duration_array)
-    
     create_phenology_netcdf(data)
 
-def create_phenology_netcdf(data):
-    ds = nc.Dataset("output.nc",'w',format='NETCDF4_CLASSIC')
-    ds.createDimension('LONGITUDE', chl.shape[3])
-    ds.createDimension('LATITUDE', chl.shape[2])
-    ds.createDimension('DEPTH', chl.shape[1])
+
+def create_chl_netcdf(data, name="chl.nc"):
+    ds = nc.Dataset(name,'w',format='NETCDF4_CLASSIC')
+    ds.createDimension('LONGITUDE', data.shape[2])
+    ds.createDimension('LATITUDE', data.shape[1])
+    ds.createDimension('DEPTH', data.shape[0])
+    ds.createDimension('TIME', 1)
+    ds.createVariable('LATITUDE', 'float32', dimensions=['LATITUDE'])
+    ds.variables['LATITUDE'].setncattr("units", "degrees north") 
+    ds.createVariable('LONGITUDE', 'float32', dimensions=['LONGITUDE'])
+    ds.variables['LONGITUDE'].setncattr("units", "degrees east") 
+    ds.createVariable('DEPTH', 'float32', dimensions=['DEPTH'])
+    ds.variables['DEPTH'].setncattr("units", "metres") 
+    ds.createVariable('TIME', 'float32', dimensions=['TIME'])
+    ds.variables['TIME'].setncattr("units", "weeks") 
+    ds.createVariable('CHL', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=-1000)
+    ds.variables['CHL'].setncattr("units", "mg m^3") 
+    ds.variables['CHL'][:] = data[:]
+    ds.close()
+
+def create_phenology_netcdf(data, name="output2.nc"):
+    ds = nc.Dataset(name,'w',format='NETCDF4_CLASSIC')
+    ds.createDimension('LONGITUDE', data[0].shape[3])
+    ds.createDimension('LATITUDE', data[0].shape[2])
+    ds.createDimension('DEPTH', data[0].shape[1])
     ds.createDimension('TIME', len(data))
     ds.createVariable('LATITUDE', 'float32', dimensions=['LATITUDE'])
     ds.variables['LATITUDE'].setncattr("units", "degrees north") 

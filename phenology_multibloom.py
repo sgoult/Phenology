@@ -106,17 +106,20 @@ def match_start_end_to_solar_cycle(array_like, start_end_list, chl_slice, revers
             #test the sst max is within the start (bloom[0])/end (bloom[1]) dates
             #I think this is wrong, shouldn't it be re testing the chlorophyll max between the two sst dates?
             if bloom_sst_max < bloom[1] and not bloom_sst_max < bloom[0]:
+                #the chlorophyll max should be within the boundary of the sst
                 true_max = bloom_sst_max
                 true_max_val = chl_slice[bloom_sst_max]
             else:
                 true_max = bloom[2]
                 true_max_val =  chl_slice[bloom[2]]
-            #check its not a bigger difference than 5 weeks, this hasn't actually been triggered in testing
-            if bloom_sst_end > bloom[1] and not bloom_sst_end > bloom[1] + 5:
+            #check its not a bigger difference than 2 weeks, this hasn't actually been triggered in testing
+            # and not bloom_sst_end > bloom[1] + 2
+            if bloom_sst_end > bloom[1]:
                 true_end = bloom_sst_end
             else:
                 true_end = bloom[1]
-            if bloom_sst_start < bloom[0] and not bloom_sst_start < bloom[0] - 5:
+            # and not bloom_sst_start < bloom[0] - 5
+            if bloom_sst_start < bloom[0]:
                 true_start = bloom_sst_start
             else:
                 true_start = bloom[0]

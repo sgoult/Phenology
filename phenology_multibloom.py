@@ -71,6 +71,7 @@ def match_start_end_to_solar_cycle(array_like, start_end_list, chl_slice, revers
     highs = []
     lows = []
     for index in true_poss:
+        #checks if the values are increasing or decreasing
         forward_index = index + 1 if not (index + 1) > (len(array_like) + 1) else index
         backward_index =  index - 1 if not (index - 1) < 0 else index
         if array_like[forward_index] >= array_like[index] and array_like[backward_index] <= array_like[index]:
@@ -81,13 +82,19 @@ def match_start_end_to_solar_cycle(array_like, start_end_list, chl_slice, revers
     lows = numpy.asarray(lows)
     maximum_sst = []
     for start in highs:
+        #this looks for the end (ie the start of a low period) to every start of a high period
         try:
+            #get the next one
             low = next(x for x in lows if x > start)
+            #select the data between the start and end of the high period
             max_idx = numpy.argmax(array_like[start:low]) + start
+            #append the sst maximum
             maximum_sst.append(max_idx)
         except StopIteration as e:
+            #we've run out of values to sequence through
             continue
         except Exception as e:
+            #we don't recognise this error - print it!
             print repr(e)
             print e
             continue
@@ -96,6 +103,7 @@ def match_start_end_to_solar_cycle(array_like, start_end_list, chl_slice, revers
     true_durations = []
     start_end_list = numpy.squeeze(start_end_list)
     for bloom in start_end_list:
+        #bloom in this case is a 0 indexed list representing [start, end, duration, max_idx]
         if all(b is None for b in bloom):
             continue
         try:
@@ -133,8 +141,10 @@ def match_start_end_to_solar_cycle(array_like, start_end_list, chl_slice, revers
                 print e
                 print maximum_sst, highs, lows
             #possibly we should just put the chlorophyll dates in here?
-    #this is some certified genuine python magic, *(sometimes called a splat) unpacks the zipped, sorted lists into a new zip that outputs to lists through a comprehension
+    #this is some certified genuine python magic, * (sometimes called a splat) unpacks the zipped, sorted lists into a new zip that outputs to lists through a comprehension
     try:
+        #check the selection criteria for the first and second selection
+        #think this should actually be finding the longest bloom in the high and then the longest duration in the low periods
         sst_sorted_durations, sst_sorted_durations_idx = (list(t) for t in zip(*sorted(zip(true_durations, range(0,len(true_durations))))))
     except ValueError:
         maximums = [[-1000,-1000,-1000,-1000,-1000], [-1000,-1000,-1000,-1000,-1000]]
@@ -151,6 +161,7 @@ def match_start_end_to_solar_cycle(array_like, start_end_list, chl_slice, revers
 def prepare_sst_variables(sst_array, numpy_storage):
     #smoothed sst
     print "sst sbx"
+    """
     sst_boxcar = numpy.apply_along_axis(numpy.convolve, 0, sst_array, numpy.ones((8,))/8, mode='valid')
     sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=sst_boxcar.dtype)
     sst_boxcar_map[:] = sst_boxcar[:]
@@ -162,6 +173,8 @@ def prepare_sst_variables(sst_array, numpy_storage):
     #get sst derivative
     print "sst der"
     sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar)
+    """
+    sst_der = sst_array
     sst_der_map = numpy.memmap(os.path.join(numpy_storage, "sst_der"), mode="w+", shape=sst_der.shape, dtype=sst_der.dtype)
     sst_der_map[:] = sst_der[:]
     return sst_der.shape, sst_der.dtype

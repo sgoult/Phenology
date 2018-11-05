@@ -37,6 +37,7 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
  
     """
     #array_like = numpy.squeeze(array_like)
+    #if it's all gone horribly wrong then this will quit out of it straight away
     if len(array_like):
         zero_crossings = list(numpy.where(numpy.diff(numpy.sign(array_like)))[0])
     else:
@@ -49,11 +50,10 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
         print zero_crossings
         print "chl sbx"
         print array_like
-    #filter out crossings that are too close to each other:
-    #true_poss = [x for x in zero_crossings if not (x+1) in zero_crossings and not (x-1) in zero_crossings]
     #find out which way we're going
     starts = []
     ends = []
+    #works much the same qas the SST one below
     for index in true_poss:
         forward_index = index + 1 if not (index + 1) >= (len(array_like)) else index
         backward_index =  index - 1 if not (index - 1) < 0 else index
@@ -61,6 +61,7 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
             starts.append(index)
         elif array_like[forward_index] <= array_like[index] and array_like[backward_index] >= array_like[index]:
             ends.append(index)
+    #we know the last entry will be an end
     ends.append(len(array_like))
     if verbose:
         print "starts and ends"
@@ -90,12 +91,15 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
         print dates
     return dates
 
-def phen_records_to_one_val(records, date_correction=False):
+def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
+    """
+    Reduces a list to one value, and corrects dates based on variable. Selects max chlorophyll as default, change index to whatever to sort by something else
+    """
     if len(records):
         if len(records) == 1:
             output_record = records[0]
         else:
-            maxes = [x[4] for x in records]
+            maxes = [x[index] for x in records]
             maximum = maxes.index(max(maxes))
             output_record = records[maximum]
         if date_correction:
@@ -107,13 +111,11 @@ def phen_records_to_one_val(records, date_correction=False):
 
 def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_seperation_per_year, reverse_search, start_date=0, verbose=False):
     """
-    Corrects the start and end times based on solar activity
-    
-!Maybe more informative if phrased as follows: "Attribute the start and end times in relation to the SST or solar cycle"
+    Attributes the start and end times in relation to the SST or solar cycle, takes an sst array (array_like), smoothed chlorophyll derivative slice (chl_sbx_slice) and the original chlorophyll data.
+
+    Slices up the data based on high/low periods of SST (or otherwise), then feeds each period into get_start_index_and_duration, once finished it will output an array of shape (x, y, time, 2, 5)
+    verbose will spame the terminal with information about whats going on, best to establish a few pixels you want to inspect rather than having this on all the time.
     """
-    #remove durations below 2 weeks
-    
-    #!I don't think i had put this condition. I think at this point i was only trying to find out if there were more than one bloom during one period of low light or low SST
     
     #possibly resort and create new durations based on remaining dates
     #look for sign changes in sst or PAR data, indicating high/low SST or light periods
@@ -121,12 +123,6 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     chl_slice = numpy.squeeze(chl_slice)
     chl_sbx_slice = numpy.squeeze(chl_sbx_slice)
     zero_crossings = numpy.where(numpy.diff(numpy.sign(array_like)))[0]
-    #filter out crossings that are too close to each other:
-
-    #! I don't think that i had put this condition. I was filtering based on the longest duration that could be found in one period
-        
-    #true_poss = [x for x in zero_crossings if not (x+1) in zero_crossings and not (x-1) in zero_crossings]
-    #shouldn't filter based on duration, no filter at all applied here
 
     #find out which way we're going
     highs = []
@@ -135,11 +131,13 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #checks if the values are increasing or decreasing
         forward_index = index + 1 if not (index + 1) > (len(array_like) + 1) else index
         backward_index =  index - 1 if not (index - 1) < 0 else index
+        #add to high period or low periods
         if array_like[forward_index] >= array_like[index] and array_like[backward_index] <= array_like[index]:
             highs.append(index)
         elif array_like[forward_index] <= array_like[index] and array_like[backward_index] >= array_like[index]:
             lows.append(index)
 
+    #print everything thus far
     if verbose:
         print "***********************"
         print "highs and lows"
@@ -149,6 +147,11 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     max_yr_idx = len(array_like)
     activity_period = None
     try:
+        """
+        if we have identified some high and low periods check which one we start with, then add the opposite one to pad back to the beginning of the year (otherwise we can miss a lot of data)
+
+        This generally won't get used if you are working with more than one year of data
+        """
         if len(highs) and len(lows):
             if not highs[0] == 0 and not lows[0] == 0:
                 if highs[0] > lows[0]:
@@ -166,11 +169,12 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         else:
             return [[None,None,None,None,None], [None,None,None,None,None]]
     except Exception as e:
-        print "in where you think"
+        #triggered once, but was helpful to know what the contents were
         print highs
         print lows
         print e
 
+    #chuck out the results
     if verbose:
         print "updated highs and lows"
         print highs
@@ -196,15 +200,18 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         
         chl_sbx_period_slice = chl_sbx_slice[index:end_date].flatten()
         chl_period_slice = chl_slice[index:end_date].flatten()
-        #print chl_period_slice
+        #get the phenology for this period, depth pads extra data if needed for numpy (we don't use this for SST model)
         period_chl_phenology = get_start_index_and_duration(chl_sbx_period_slice,chl_period_slice,index,depth=5,verbose=verbose)
+        #if we found anything
         if len(period_chl_phenology):
+            #loop through them and add them to the high/low mega lists
             for record in period_chl_phenology:
                 if activity_period:
                     high_records.append(record)
                 else:
                     low_records.append(record)
     
+    #to remind ourselves what the phenology records look like
     #[start,end,end-start,max_idx,chl_values[max_idx]]
     blooms = []
     for year in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year):
@@ -216,8 +223,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             print "found ", len(possible_high_blooms), " highs"
             print "found ", len(possible_low_blooms), " lows"
 
-        low = phen_records_to_one_val(possible_low_blooms, year)
-        high = phen_records_to_one_val(possible_high_blooms, year)
+        #reduce them to one record
+        low = phen_records_to_one_val_on_max(possible_low_blooms, year)
+        high = phen_records_to_one_val_on_max(possible_high_blooms, year)
         if not low or not high:
             print "***************"
             print high_records
@@ -226,115 +234,16 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             print possible_high_blooms
             print possible_low_blooms
             print low, high
+        #spit out the low period and high period for this year
         blooms.append([low,high])
 
     return blooms
 
-
-
-    """
-    for start in highs:
-        #this looks for the end (ie the start of a low period) to every start of a high period
-        try:
-            #get the end date
-            low = next(x for x in lows if x > start)
-            #select the data between the start and end of the high period
-            max_idx = numpy.argmax(array_like[start:low]) + start
-            #append the sst maximum
-            
-            #! not sure if we need to save the SST maximum, but need to save the Chl maximum and the duration
-            
-            maximum_sst.append(max_idx)
-        except StopIteration as e:
-            #we've run out of values to sequence through
-            continue
-        except Exception as e:
-            #we don't recognise this error - print it!
-            print repr(e)
-            print e
-            continue
-    maximum_sst = numpy.asarray(maximum_sst)
-    sst_bloom_timings = []
-    true_durations = []
-    start_end_list = numpy.squeeze(start_end_list)
-    for bloom in start_end_list:
-        #bloom in this case is a 0 indexed list representing [start, end, duration, max_idx]
-        if all(b is None for b in bloom):
-            continue
-        try:
-            bloom_sst_max = (numpy.abs(maximum_sst - bloom[3])).argmin() + bloom[3]
-            bloom_sst_start = (numpy.abs(highs - bloom[0])).argmin() + bloom[0]
-            bloom_sst_end = (numpy.abs(lows - bloom[1])).argmin() + bloom[1]
-            bloom_sst_duration = bloom_sst_end - bloom_sst_start
-            #test the sst max is within the start (bloom[0])/end (bloom[1]) dates
-            #I think this is wrong, shouldn't it be re testing the chlorophyll max between the two sst dates?
-
-            # !yes, please see !comment[A] at the beginning
-            
-            if bloom_sst_max < bloom[1] and not bloom_sst_max < bloom[0]:
-                #the chlorophyll max should be within the boundary of the sst
-
-                #!the Chl max should be within the boundary of the start and end times
-                
-                true_max = bloom_sst_max
-                true_max_val = chl_slice[bloom_sst_max]
-            else:
-                true_max = bloom[2]
-                true_max_val =  chl_slice[bloom[2]]
-            #check its not a bigger difference than 2 weeks, this hasn't actually been triggered in testing
-            # and not bloom_sst_end > bloom[1] + 2
-
-            # !please see my comment above - i don't think i had put a condition on the bloom duration length at this point. The condition was to keep the start and end dates for the longest bloom duration within one period of high SST or PAR and the same for a period of low SST and PAR 
-            
-            if bloom_sst_end > bloom[1]:
-                true_end = bloom_sst_end
-            else:
-                true_end = bloom[1]
-            # and not bloom_sst_start < bloom[0] - 5
-
-            # !not sure i understand the -5 here
-            
-            if bloom_sst_start < bloom[0]:
-                true_start = bloom_sst_start
-            else:
-                true_start = bloom[0]
-
-            true_duration = true_end - true_start
-            sst_bloom_timings.append([true_start-reverse_search, true_end-reverse_search,true_duration,true_max-reverse_search,true_max_val])
-            true_durations.append(true_duration)
-        except ValueError as e:
-            if (maximum_sst.size > 1 and highs.size > 1 and lows.size > 1):
-                print repr(e)
-                print e
-                print maximum_sst, highs, lows
-            #possibly we should just put the chlorophyll dates in here?
-
-            # ! sorry not clear to me what the code is doing here, we can discuss when we meet
-            
-    #this is some certified genuine python magic, * (sometimes called a splat) unpacks the zipped, sorted lists into a new zip that outputs to lists through a comprehension
-    try:
-        #check the selection criteria for the first and second selection
-        #think this should actually be finding the longest bloom in the high and then the longest duration in the low periods
-
-        # ! yes correct :)
-        #add some logic here to allow user to select either durtation or maximum chlorophyll (or something else maybe)
-        sst_sorted_durations, sst_sorted_durations_idx = (list(t) for t in zip(*sorted(zip(true_durations, range(0,len(true_durations))))))
-    except ValueError:
-        maximums = [[-1000,-1000,-1000,-1000,-1000], [-1000,-1000,-1000,-1000,-1000]]
-    else:
-     #sst_sorted_durations, sst_sorted_durations_idx = zip(*sorted(zip(sst_durations, range(0,len(sst_durations)))
-        if len(sst_sorted_durations) >= 2:
-            maximums = [sst_bloom_timings[sst_sorted_durations_idx[0]],sst_bloom_timings[sst_sorted_durations_idx[1]]]
-        elif len(sst_sorted_durations) == 1:
-            maximums = [sst_bloom_timings[sst_sorted_durations_idx[0]], [-1000,-1000,-1000,-1000,-1000]]
-        else:
-            maximums = [[-1000,-1000,-1000,-1000,-1000], [-1000,-1000,-1000,-1000,-1000]]
-    return maximums
-
-        # ! do you attribute the timing according to the calendar year? I think i do it first for the SST and PAR cycles, and then the timing of chl start and end (based on the SST or PAR cycles) 
-    """
-
 def prepare_sst_variables(sst_array, numpy_storage):
+    """
+    Creates smoothed sst, currently has a large portion commented out as source file is already the centered derivative diff data.
+    """
+
     #smoothed sst
     print "sst sbx"
     """
@@ -355,6 +264,9 @@ def prepare_sst_variables(sst_array, numpy_storage):
     return sst_der.shape, sst_der.dtype
 
 def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
+    """
+    Creates the smoothed anomaly chlorophyll data, saves a file to the temporary directory that is read as a mem map later to conserve resources.
+    """
     #median * 1.05
     
     #! here i would prefer we output the media value (without adding 5% to it)
@@ -409,6 +321,10 @@ def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
     return chl_boxcar.shape, chl_boxcar.dtype
 
 def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenology.nc"):
+    """
+    Creates the skeleton of the netcdf file to be used by write_to_output_netcdf, all of this is metadata.
+    """
+
     global output_location
     output_location = name
     ds = nc.Dataset(name,'w',format='NETCDF4_CLASSIC')
@@ -451,17 +367,13 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     print "created netcdf {}".format(name)
 
 def write_to_output_netcdf(data):
+    """
+    Loops through each year in the numpy array and writes the data to the netcdf file, this should work faster if we get rid of the loop but I can't seem to grock the logic to fix it right now.
+    """
     ds = nc.Dataset(output_location,'r+',format='NETCDF4_CLASSIC')
     print output_location
     print "pre-writing data shape: {}".format(data.shape)
     year = ds.variables['date_start1'][:].shape[0]
-    """
-    if not ds.variables['date_start1'][:].shape[0]:
-        netcdf_data_shape = (+1, 1, data.shape[2], data.shape[3])
-        print "start1 shapes: {} {}".format(ds.variables['date_start1'][:].shape, data[0][0].shape)
-        ds.variables['date_start1'][:] = numpy.append(ds.variables['date_start1'][:], data[0][0]).reshape(netcdf_data_shape)
-    else:
-    """
     print data[:,:,:,0,0].shape
     ds.variables['TIME'][:] = range(0, data.shape[2])
     for year in range(0, data.shape[2] -1):
@@ -476,17 +388,6 @@ def write_to_output_netcdf(data):
         ds.variables['max_val1'][year] = data[:,:,year,0,4]
         ds.variables['max_val2'][year] = data[:,:,year,1,4]
     print ds.variables['TIME'][:]
-    """
-    ds.variables['date_start1'][:] = numpy.append(ds.variables['date_start1'][:], data[0][0])
-    print "max1 shapes: {} {}".format(ds.variables['date_max1'][:].shape, data[0][1].shape)
-    ds.variables['date_max1'][:] = numpy.append(ds.variables['date_max1'][:], data[0][1])
-    ds.variables['date_end1'][:] = numpy.append( ds.variables['date_end1'][:], data[0][2])
-    ds.variables['duration1'][:] = numpy.append(ds.variables['duration1'][:], data[0][3])
-    ds.variables['date_start2'][:] = numpy.append(ds.variables['date_start2'][:], data[1][0])
-    ds.variables['date_max2'][:] = numpy.append(ds.variables['date_max2'][:], data[1][1])
-    ds.variables['date_end2'][:] = numpy.append(ds.variables['date_end2'][:], data[1][2])
-    ds.variables['duration2'][:] = numpy.append(ds.variables['duration2'][:], data[1][3])
-    """
     ds.close()
 
 
@@ -596,3 +497,108 @@ if __name__ == "__main__":
     create_phenology_netcdf(chl_lons, chl_lats, chl_shape, args.output)
 
     get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=int(args.date_seperation_per_year), start_date=args.first_date_index, reverse_search=20)
+
+
+
+    """
+    old code from match_start_end
+    for start in highs:
+        #this looks for the end (ie the start of a low period) to every start of a high period
+        try:
+            #get the end date
+            low = next(x for x in lows if x > start)
+            #select the data between the start and end of the high period
+            max_idx = numpy.argmax(array_like[start:low]) + start
+            #append the sst maximum
+            
+            #! not sure if we need to save the SST maximum, but need to save the Chl maximum and the duration
+            
+            maximum_sst.append(max_idx)
+        except StopIteration as e:
+            #we've run out of values to sequence through
+            continue
+        except Exception as e:
+            #we don't recognise this error - print it!
+            print repr(e)
+            print e
+            continue
+    maximum_sst = numpy.asarray(maximum_sst)
+    sst_bloom_timings = []
+    true_durations = []
+    start_end_list = numpy.squeeze(start_end_list)
+    for bloom in start_end_list:
+        #bloom in this case is a 0 indexed list representing [start, end, duration, max_idx]
+        if all(b is None for b in bloom):
+            continue
+        try:
+            bloom_sst_max = (numpy.abs(maximum_sst - bloom[3])).argmin() + bloom[3]
+            bloom_sst_start = (numpy.abs(highs - bloom[0])).argmin() + bloom[0]
+            bloom_sst_end = (numpy.abs(lows - bloom[1])).argmin() + bloom[1]
+            bloom_sst_duration = bloom_sst_end - bloom_sst_start
+            #test the sst max is within the start (bloom[0])/end (bloom[1]) dates
+            #I think this is wrong, shouldn't it be re testing the chlorophyll max between the two sst dates?
+
+            # !yes, please see !comment[A] at the beginning
+            
+            if bloom_sst_max < bloom[1] and not bloom_sst_max < bloom[0]:
+                #the chlorophyll max should be within the boundary of the sst
+
+                #!the Chl max should be within the boundary of the start and end times
+                
+                true_max = bloom_sst_max
+                true_max_val = chl_slice[bloom_sst_max]
+            else:
+                true_max = bloom[2]
+                true_max_val =  chl_slice[bloom[2]]
+            #check its not a bigger difference than 2 weeks, this hasn't actually been triggered in testing
+            # and not bloom_sst_end > bloom[1] + 2
+
+            # !please see my comment above - i don't think i had put a condition on the bloom duration length at this point. The condition was to keep the start and end dates for the longest bloom duration within one period of high SST or PAR and the same for a period of low SST and PAR 
+            
+            if bloom_sst_end > bloom[1]:
+                true_end = bloom_sst_end
+            else:
+                true_end = bloom[1]
+            # and not bloom_sst_start < bloom[0] - 5
+
+            # !not sure i understand the -5 here
+            
+            if bloom_sst_start < bloom[0]:
+                true_start = bloom_sst_start
+            else:
+                true_start = bloom[0]
+
+            true_duration = true_end - true_start
+            sst_bloom_timings.append([true_start-reverse_search, true_end-reverse_search,true_duration,true_max-reverse_search,true_max_val])
+            true_durations.append(true_duration)
+        except ValueError as e:
+            if (maximum_sst.size > 1 and highs.size > 1 and lows.size > 1):
+                print repr(e)
+                print e
+                print maximum_sst, highs, lows
+            #possibly we should just put the chlorophyll dates in here?
+
+            # ! sorry not clear to me what the code is doing here, we can discuss when we meet
+            
+    #this is some certified genuine python magic, * (sometimes called a splat) unpacks the zipped, sorted lists into a new zip that outputs to lists through a comprehension
+    try:
+        #check the selection criteria for the first and second selection
+        #think this should actually be finding the longest bloom in the high and then the longest duration in the low periods
+
+        # ! yes correct :)
+        #add some logic here to allow user to select either durtation or maximum chlorophyll (or something else maybe)
+        sst_sorted_durations, sst_sorted_durations_idx = (list(t) for t in zip(*sorted(zip(true_durations, range(0,len(true_durations))))))
+    except ValueError:
+        maximums = [[-1000,-1000,-1000,-1000,-1000], [-1000,-1000,-1000,-1000,-1000]]
+    else:
+     #sst_sorted_durations, sst_sorted_durations_idx = zip(*sorted(zip(sst_durations, range(0,len(sst_durations)))
+        if len(sst_sorted_durations) >= 2:
+            maximums = [sst_bloom_timings[sst_sorted_durations_idx[0]],sst_bloom_timings[sst_sorted_durations_idx[1]]]
+        elif len(sst_sorted_durations) == 1:
+            maximums = [sst_bloom_timings[sst_sorted_durations_idx[0]], [-1000,-1000,-1000,-1000,-1000]]
+        else:
+            maximums = [[-1000,-1000,-1000,-1000,-1000], [-1000,-1000,-1000,-1000,-1000]]
+    return maximums
+
+        # ! do you attribute the timing according to the calendar year? I think i do it first for the SST and PAR cycles, and then the timing of chl start and end (based on the SST or PAR cycles) 
+    """

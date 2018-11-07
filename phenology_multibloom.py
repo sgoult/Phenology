@@ -105,6 +105,8 @@ def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
         if date_correction:
             output_record[0] = output_record[0] - date_correction
             output_record[1] = output_record[1] - date_correction
+            #TODO double check this is actually correcting the max idx value
+            output_record[3] = output_record[3] - date_correction
         return output_record
     else:
         return [None,None,None,None,None]
@@ -371,6 +373,7 @@ def write_to_output_netcdf(data):
     Loops through each year in the numpy array and writes the data to the netcdf file, this should work faster if we get rid of the loop but I can't seem to grock the logic to fix it right now.
     """
     ds = nc.Dataset(output_location,'r+',format='NETCDF4_CLASSIC')
+    data = data.astype(np.float32)
     print output_location
     print "pre-writing data shape: {}".format(data.shape)
     year = ds.variables['date_start1'][:].shape[0]

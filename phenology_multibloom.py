@@ -371,7 +371,7 @@ def write_to_output_netcdf(data):
     Loops through each year in the numpy array and writes the data to the netcdf file, this should work faster if we get rid of the loop but I can't seem to grock the logic to fix it right now.
     """
     ds = nc.Dataset(output_location,'r+',format='NETCDF4_CLASSIC')
-    data = data.astype(np.float32)
+    data = data.astype(numpy.float32)
     print(output_location)
     print("pre-writing data shape: {}".format(data.shape))
     year = ds.variables['date_start1'][:].shape[0]

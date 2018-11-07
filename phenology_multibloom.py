@@ -372,6 +372,7 @@ def write_to_output_netcdf(data):
     """
     ds = nc.Dataset(output_location,'r+',format='NETCDF4_CLASSIC')
     data = data.astype(numpy.float32)
+    data = numpy.ma.fix_invalid(data)
     print(output_location)
     print("pre-writing data shape: {}".format(data.shape))
     year = ds.variables['date_start1'][:].shape[0]

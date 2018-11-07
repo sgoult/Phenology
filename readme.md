@@ -1,7 +1,12 @@
 Requirements
 
- python-pyshp libgfortran numpy python-qt4 libpangocairo libcurl4-openssl-dev
+python 2.7 or 3.7
 
-Preferably just install pyferret from https://github.com/NOAA-PMEL/PyFerret/releases
+numpy=1.15.4
+netCDF4=1.4.2
 
+this can be installed with:
+
+conda create --name phenology_env python=3 anaconda
+conda install --name phenology_env numpy=1.15.4 netCDF4=1.4.2
 

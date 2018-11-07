@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import print_function, division
 import os
 import numpy
 import argparse
@@ -414,9 +414,9 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     sst_der = numpy.ma.masked_where((sst_der == FILL_VAL), sst_der)
     #print("doing chlorophyll initiations")
     #start_end_duration_array = numpy.apply_along_axis(get_start_index_and_duration, 0, year_chl_boxcar)
-    year_true_start_end_array = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], abs(chl_data.shape[0] / date_seperation_per_year), 2,5))
+    year_true_start_end_array = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int(abs(chl_data.shape[0] / date_seperation_per_year)), 2,5))
     year_true_start_end_array.fill(FILL_VAL)
-    completion_points = range(0, chl_data.shape[2], chl_data.shape[2] / 10)
+    completion_points = range(0, chl_data.shape[2], chl_data.shape[2] // 10)
     print("doing sst initiations and correction")
     for ix in numpy.ndindex(chl_data.shape[2]):
         for iy in numpy.ndindex(chl_data.shape[3]):

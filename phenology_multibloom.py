@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import numpy
 import argparse
@@ -10,6 +11,8 @@ import glob
 from scipy.interpolate import interp2d
 from scipy import ndimage
 from scipy import signal
+
+FILL_VAL = -9.999999999999998e+33
 
 MEDIAN_THRESHOLD_DEFAULT = 5
 
@@ -46,10 +49,10 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
 
 
     if verbose:
-        print "zero crossings"
-        print zero_crossings
-        print "chl sbx"
-        print array_like
+        print("zero crossings")
+        print(zero_crossings)
+        print("chl sbx")
+        print(array_like)
     #find out which way we're going
     starts = []
     ends = []
@@ -64,31 +67,31 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
     #we know the last entry will be an end
     ends.append(len(array_like))
     if verbose:
-        print "starts and ends"
-        print starts
-        print ends
+        print("starts and ends")
+        print(starts)
+        print(ends)
     #find an end for every start
     dates = []
     for start in starts:
         try:
            end = next(x for x in ends if x > start)
            if verbose:
-               print "chl values"
-               print chl_values[start:end]
+               print("chl values")
+               print(chl_values[start:end])
            max_idx = numpy.nanargmax(chl_values[start:end]) + start
            dates.append([start + date_offset,end + date_offset,end-start,max_idx,chl_values[max_idx]])
         except StopIteration:
             continue
         except Exception as e:
-           print e
-           print repr(e)
+           print(e)
+           print(repr(e))
            continue
     if pad_values:
         for pad in range(len(dates), depth):
             dates.append([None,None,None,None,None])
     if verbose:
-        print "end dates"
-        print dates
+        print("end dates")
+        print(dates)
     return dates
 
 def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
@@ -139,12 +142,12 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         elif array_like[forward_index] <= array_like[index] and array_like[backward_index] >= array_like[index]:
             lows.append(index)
 
-    #print everything thus far
+    #print(everything thus far
     if verbose:
-        print "***********************"
-        print "highs and lows"
-        print highs
-        print lows
+        print("***********************")
+        print("highs and lows")
+        print(highs)
+        print(lows)
     maximum_sst = []
     max_yr_idx = len(array_like)
     activity_period = None
@@ -172,15 +175,15 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             return [[None,None,None,None,None], [None,None,None,None,None]]
     except Exception as e:
         #triggered once, but was helpful to know what the contents were
-        print highs
-        print lows
-        print e
+        print(highs)
+        print(lows)
+        print(e)
 
     #chuck out the results
     if verbose:
-        print "updated highs and lows"
-        print highs
-        print lows
+        print("updated highs and lows")
+        print(highs)
+        print(lows)
 
     high_records = []
     low_records = []
@@ -221,21 +224,21 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
         possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
         if verbose:
-            print year
-            print "found ", len(possible_high_blooms), " highs"
-            print "found ", len(possible_low_blooms), " lows"
+            print(year)
+            print("found ", len(possible_high_blooms), " highs")
+            print("found ", len(possible_low_blooms), " lows")
 
         #reduce them to one record
         low = phen_records_to_one_val_on_max(possible_low_blooms, year)
         high = phen_records_to_one_val_on_max(possible_high_blooms, year)
         if not low or not high:
-            print "***************"
-            print high_records
-            print low_records
-            print year - reverse_search
-            print possible_high_blooms
-            print possible_low_blooms
-            print low, high
+            print("***************")
+            print(high_records)
+            print(low_records)
+            print(year - reverse_search)
+            print(possible_high_blooms)
+            print(possible_low_blooms)
+            print(low, high)
         #spit out the low period and high period for this year
         blooms.append([low,high])
 
@@ -247,7 +250,7 @@ def prepare_sst_variables(sst_array, numpy_storage):
     """
 
     #smoothed sst
-    print "sst sbx"
+    print("sst sbx")
     """
     sst_boxcar = numpy.apply_along_axis(numpy.convolve, 0, sst_array, numpy.ones((8,))/8, mode='valid')
     sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=sst_boxcar.dtype)
@@ -257,7 +260,7 @@ def prepare_sst_variables(sst_array, numpy_storage):
     sst_boxcar_map = None
     sst_array = None
     #get sst derivative
-    print "sst der"
+    print("sst der")
     sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar)
     """
     sst_der = sst_array
@@ -273,10 +276,10 @@ def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
     
     #! here i would prefer we output the media value (without adding 5% to it)
     
-    print "med5"
+    print("med5")
     med5 = numpy.ma.median(chl_array,axis = 0)
-    print "median value: {}".format(med5)
-    print "median threshold: {}".format(median_threshold)
+    print("median value: {}".format(med5))
+    print("median threshold: {}".format(median_threshold))
 
 
     #! after estimating the median, i apply a filling to the chl time-series, e.g., window of 8 time steps, but it would be good to be able to choose other width of the window, e.g., 5 time-steps or 3 time-steps...
@@ -284,7 +287,7 @@ def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
     #! here it would be good to give the option to select the value of the median threshold, e.g., median plus 5%, 10%, 15%...
     
     #get anomalies
-    print "anomaly"
+    print("anomaly")
     anomaly = chl_array - (med5*1.2)
     anomaly_map = numpy.memmap(os.path.join(numpy_storage, "chl_anomaly"), mode="w+", shape=anomaly.shape, dtype=anomaly.dtype)
     anomaly_map[:] = anomaly[:]
@@ -294,7 +297,7 @@ def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
     #need to ditch any empty entries here as they interefere with the cumsum
 
     #get cumsum of anomalies
-    print "chl cumsum"
+    print("chl cumsum")
     chl_cumsum = numpy.ma.cumsum(anomaly,axis=1)
     chl_cumsum_map = numpy.memmap(os.path.join(numpy_storage, "chl_cumsum"), mode="w+", shape=chl_cumsum.shape, dtype=chl_cumsum.dtype)
     chl_cumsum_map[:] = chl_cumsum[:]
@@ -304,7 +307,7 @@ def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
 
 
     #get centered derivative        
-    print "chl der"
+    print("chl der")
     chl_der = numpy.apply_along_axis(centered_diff_derivative, 0, chl_cumsum)
     chl_der_map = numpy.memmap(os.path.join(numpy_storage, "chl_der"), mode="w+", shape=chl_der.shape, dtype=chl_der.dtype)
     chl_der_map[:] = chl_der[:]
@@ -313,7 +316,7 @@ def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
     chl_der_map = None
 
     #boxcar filter with width of 3 (sbx) should be something like this:
-    print "chl sbx"
+    print("chl sbx")
     chl_boxcar = numpy.apply_along_axis(numpy.convolve, 0, chl_der, numpy.ones((8,))/8, mode='valid')
     chl_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "chl_sbx"), mode="w+", shape=chl_boxcar.shape, dtype=chl_boxcar.dtype)
     chl_boxcar_map[:] = chl_boxcar[:]
@@ -345,28 +348,28 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.variables['DEPTH'].setncattr("units", "metres")
     ds.createVariable('TIME', 'float32', dimensions=['TIME'])
     ds.variables['TIME'].setncattr("units", "years")
-    ds.createVariable('date_start1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=-1000)
+    ds.createVariable('date_start1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['date_start1'].setncattr("units", "weeks")
-    ds.createVariable('date_max1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=-1000)
+    ds.createVariable('date_max1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['date_max1'].setncattr("units", "weeks")
-    ds.createVariable('date_end1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=-1000)
+    ds.createVariable('date_end1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['date_end1'].setncattr("units", "weeks")
-    ds.createVariable('duration1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=-1000)
+    ds.createVariable('duration1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['duration1'].setncattr("units", "weeks")
-    ds.createVariable('date_start2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=-1000)
+    ds.createVariable('date_start2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['date_start2'].setncattr("units", "weeks")
-    ds.createVariable('date_max2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=-1000)
+    ds.createVariable('date_max2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['date_max2'].setncattr("units", "weeks")
-    ds.createVariable('date_end2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=-1000)
+    ds.createVariable('date_end2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['date_end2'].setncattr("units", "weeks")
-    ds.createVariable('duration2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=-1000)
+    ds.createVariable('duration2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['duration2'].setncattr("units", "weeks")
-    ds.createVariable('max_val1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=-1000)
-    ds.createVariable('max_val2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=-1000)
+    ds.createVariable('max_val1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('max_val2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['max_val2'].setncattr("units", "mgChl/m3")
     ds.variables['max_val1'].setncattr("units", "weeks")
     ds.close()
-    print "created netcdf {}".format(name)
+    print("created netcdf {}".format(name))
 
 def write_to_output_netcdf(data):
     """
@@ -374,10 +377,10 @@ def write_to_output_netcdf(data):
     """
     ds = nc.Dataset(output_location,'r+',format='NETCDF4_CLASSIC')
     data = data.astype(np.float32)
-    print output_location
-    print "pre-writing data shape: {}".format(data.shape)
+    print(output_location)
+    print("pre-writing data shape: {}".format(data.shape))
     year = ds.variables['date_start1'][:].shape[0]
-    print data[:,:,:,0,0].shape
+    print(data[:,:,:,0,0].shape)
     ds.variables['TIME'][:] = range(0, data.shape[2])
     for year in range(0, data.shape[2] -1):
         ds.variables['date_start1'][year] = data[:,:,year,0,0]
@@ -390,31 +393,31 @@ def write_to_output_netcdf(data):
         ds.variables['duration2'][year] = data[:,:,year,1,2]
         ds.variables['max_val1'][year] = data[:,:,year,0,4]
         ds.variables['max_val2'][year] = data[:,:,year,1,4]
-    print ds.variables['TIME'][:]
+    print(ds.variables['TIME'][:])
     ds.close()
 
 
 
 def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=47, start_date=0, reverse_search=20):
     #this all works on the assumption the axis 0 is time
-    print "reading variables"
+    print("reading variables")
     chl_boxcar = numpy.memmap(os.path.join(numpy_storage, "chl_sbx"), mode="r", dtype=chl_dtype, shape=chl_shape)
     sst_der = numpy.memmap(os.path.join(numpy_storage, "sst_der"), mode="r", dtype=sst_dtype, shape=sst_shape)
-    print "shapes after reading sst: {} chl: {}".format(chl_boxcar.shape, sst_der.shape)
-    print "reshaping to sst: {} chl: {}".format(sst_shape, chl_shape)
+    print("shapes after reading sst: {} chl: {}".format(chl_boxcar.shape, sst_der.shape))
+    print("reshaping to sst: {} chl: {}".format(sst_shape, chl_shape))
     sst_der.shape = sst_shape
     chl_boxcar.shape = chl_shape
 
-    print "doing yearly evaluation, this may take up a lot of memory, if so double check all memmaps have been flushed"
+    print("doing yearly evaluation, this may take up a lot of memory, if so double check all memmaps have been flushed")
     #get start and ends, this works
-    chl_boxcar = numpy.ma.masked_where((chl_boxcar == -9.999999999999998e+33), chl_boxcar)
-    sst_der = numpy.ma.masked_where((sst_der == -9.999999999999998e+33), sst_der)
-    #print "doing chlorophyll initiations"
+    chl_boxcar = numpy.ma.masked_where((chl_boxcar == FILL_VAL), chl_boxcar)
+    sst_der = numpy.ma.masked_where((sst_der == FILL_VAL), sst_der)
+    #print("doing chlorophyll initiations")
     #start_end_duration_array = numpy.apply_along_axis(get_start_index_and_duration, 0, year_chl_boxcar)
     year_true_start_end_array = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], abs(chl_data.shape[0] / date_seperation_per_year), 2,5))
-    year_true_start_end_array.fill(-1000)
+    year_true_start_end_array.fill(FILL_VAL)
     completion_points = range(0, chl_data.shape[2], chl_data.shape[2] / 10)
-    print "doing sst initiations and correction"
+    print("doing sst initiations and correction")
     for ix in numpy.ndindex(chl_data.shape[2]):
         for iy in numpy.ndindex(chl_data.shape[3]):
             try:
@@ -423,18 +426,18 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
                     verbose = True
                 year_true_start_end_array[ix,iy] = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date)
                 if verbose:
-                    print "end duration array"
-                    print year_true_start_end_array[ix,iy]
+                    print("end duration array")
+                    print(year_true_start_end_array[ix,iy])
             except Exception as e:
-                print e
-                print repr(e)
-                print match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date)
-                print 
+                print(e)
+                print(repr(e))
+                print(match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date))
+                print()
         if ix[0] in completion_points:
-            print completion_points.index(ix[0]) * 10, "% complete"
+            print(completion_points.index(ix[0]) * 10, "% complete")
 
-    print "done sst initiations and correction"
-    print "writing to netcdf"
+    print("done sst initiations and correction")
+    print("writing to netcdf")
     #needs to be extended to be able to output 3 files: sorted by calendar year, one with primary and secondary chloropjhyll maximum
     write_to_output_netcdf(year_true_start_end_array)
 
@@ -459,31 +462,31 @@ if __name__ == "__main__":
     #remember to change median threshold to percentage!
 
     if args.sst_location:
-        print "sst file provided, reading array"
+        print("sst file provided, reading array")
         sst_files = glob.glob(args.sst_location)
         if len(sst_files) == 1:
-            print "only one file found, assuming full stack of observations"
+            print("only one file found, assuming full stack of observations")
             sst_ds = nc.Dataset(sst_files[0])
             sst_variable = [x for x in sst_ds.variables if "sst" in x.lower()][0]
             sst_array = sst_ds.variables[sst_variable][:]
         else:
             raise NotImplementedError
         sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage)
-        print "sst_shape: {}".format(sst_shape)
-        print "sst_dtype: {}".format(sst_dtype)
+        print("sst_shape: {}".format(sst_shape))
+        print("sst_dtype: {}".format(sst_dtype))
         sst_array = None
 
     chl_files = glob.glob(args.chl_location)
     if len(chl_files) == 1:
-        print "only one chl file found, assuming full stack of observations"
+        print("only one chl file found, assuming full stack of observations")
         chl_ds = nc.Dataset(chl_files[0])
         chl_variable = [x for x in chl_ds.variables if "chl" in x.lower()][0]
         chl_array = chl_ds.variables[chl_variable][:]
     else:
         raise NotImplementedError
     chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage)
-    print "chl_shape: {}".format(chl_shape)
-    print "chl_dtype: {}".format(chl_dtype)
+    print("chl_shape: {}".format(chl_shape))
+    print("chl_dtype: {}".format(chl_dtype))
 
     chl_ds = nc.Dataset(args.chl_location)
     chl_variable = [x for x in chl_ds.variables if "chl" in x.lower()][0]
@@ -494,9 +497,9 @@ if __name__ == "__main__":
     sst_dtype = 'float64'
     chl_dtype = 'float64'
     chl_data = chl_ds[chl_variable]
-    print "creating output netcdf {}".format(args.output)
+    print("creating output netcdf {}".format(args.output))
 
-    print chl_shape
+    print(chl_shape)
     create_phenology_netcdf(chl_lons, chl_lats, chl_shape, args.output)
 
     get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=int(args.date_seperation_per_year), start_date=args.first_date_index, reverse_search=20)
@@ -521,9 +524,9 @@ if __name__ == "__main__":
             #we've run out of values to sequence through
             continue
         except Exception as e:
-            #we don't recognise this error - print it!
-            print repr(e)
-            print e
+            #we don't recognise this error - print(it!
+            print(repr(e)
+            print(e
             continue
     maximum_sst = numpy.asarray(maximum_sst)
     sst_bloom_timings = []
@@ -576,9 +579,9 @@ if __name__ == "__main__":
             true_durations.append(true_duration)
         except ValueError as e:
             if (maximum_sst.size > 1 and highs.size > 1 and lows.size > 1):
-                print repr(e)
-                print e
-                print maximum_sst, highs, lows
+                print(repr(e)
+                print(e
+                print(maximum_sst, highs, lows
             #possibly we should just put the chlorophyll dates in here?
 
             # ! sorry not clear to me what the code is doing here, we can discuss when we meet
@@ -592,15 +595,15 @@ if __name__ == "__main__":
         #add some logic here to allow user to select either durtation or maximum chlorophyll (or something else maybe)
         sst_sorted_durations, sst_sorted_durations_idx = (list(t) for t in zip(*sorted(zip(true_durations, range(0,len(true_durations))))))
     except ValueError:
-        maximums = [[-1000,-1000,-1000,-1000,-1000], [-1000,-1000,-1000,-1000,-1000]]
+        maximums = [[FILL_VAL,FILL_VAL,FILL_VAL,FILL_VAL,FILL_VAL], [FILL_VAL,FILL_VAL,FILL_VAL,FILL_VAL,FILL_VAL]]
     else:
      #sst_sorted_durations, sst_sorted_durations_idx = zip(*sorted(zip(sst_durations, range(0,len(sst_durations)))
         if len(sst_sorted_durations) >= 2:
             maximums = [sst_bloom_timings[sst_sorted_durations_idx[0]],sst_bloom_timings[sst_sorted_durations_idx[1]]]
         elif len(sst_sorted_durations) == 1:
-            maximums = [sst_bloom_timings[sst_sorted_durations_idx[0]], [-1000,-1000,-1000,-1000,-1000]]
+            maximums = [sst_bloom_timings[sst_sorted_durations_idx[0]], [FILL_VAL,FILL_VAL,FILL_VAL,FILL_VAL,FILL_VAL]]
         else:
-            maximums = [[-1000,-1000,-1000,-1000,-1000], [-1000,-1000,-1000,-1000,-1000]]
+            maximums = [[FILL_VAL,FILL_VAL,FILL_VAL,FILL_VAL,FILL_VAL], [FILL_VAL,FILL_VAL,FILL_VAL,FILL_VAL,FILL_VAL]]
     return maximums
 
         # ! do you attribute the timing according to the calendar year? I think i do it first for the SST and PAR cycles, and then the timing of chl start and end (based on the SST or PAR cycles) 

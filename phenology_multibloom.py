@@ -4,13 +4,8 @@ import numpy
 import argparse
 import netCDF4 as nc
 import shutil
-import scipy.ndimage as ndimage
-import scipy.signal as signal
 import tempfile
 import glob
-from scipy.interpolate import interp2d
-from scipy import ndimage
-from scipy import signal
 
 FILL_VAL = -9.999999999999998e+33
 

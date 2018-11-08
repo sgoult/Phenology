@@ -11,6 +11,10 @@ conda create --name phenology_env python=3 anaconda
 
 conda install --name phenology_env numpy=1.15.4 netCDF4=1.4.2
 
+Example usage:
+`python3 phenology_multibloom.py --sst_location sstder_98_06_global_nofixval_newg.nc chl_5day_MIT_global_98_06.nc --date_seperation_per_year=73`
+
+This will produce a file named phenology.nc, using the two bloom method with time slices matched to every 73 entries (5 day composites).
 
 ```
 usage: phenology_multibloom.py [-h] [--sst_location SST_LOCATION]

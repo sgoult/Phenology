@@ -104,8 +104,7 @@ def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
         if date_correction:
             output_record[0] = output_record[0] - date_correction
             output_record[1] = output_record[1] - date_correction
-            #TODO double check this is actually correcting the max idx value
-            output_record[3] = output_record[3] - date_correction
+            output_record[3] = output_record[3]
         return output_record
     else:
         return [None,None,None,None,None]
@@ -338,13 +337,15 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.createDimension('DEPTH', output_shape[1])
     ds.createDimension('TIME', None)
     ds.createVariable('LATITUDE', 'float32', dimensions=['LATITUDE'])
-    ds.variables['LATITUDE'].setncattr("units", "degrees north")
+    ds.variables['LATITUDE'].setncattr("units", "degrees_north")
     ds.variables['LATITUDE'][:] = chl_lats
     ds.createVariable('LONGITUDE', 'float32', dimensions=['LONGITUDE'])
-    ds.variables['LONGITUDE'].setncattr("units", "degrees east")
+    ds.variables['LONGITUDE'].setncattr("units", "degrees_east")
     ds.variables['LONGITUDE'][:] = chl_lons
     ds.createVariable('DEPTH', 'float32', dimensions=['DEPTH'])
-    ds.variables['DEPTH'].setncattr("units", "metres")
+    ds.variables['DEPTH'].setncattr("units", "meters")
+    ds.variables['DEPTH'].setncattr("positive", "down")
+    ds.variables['DEPTH'][:] = [0.1]
     ds.createVariable('TIME', 'float32', dimensions=['TIME'])
     ds.variables['TIME'].setncattr("units", "years")
     ds.createVariable('date_start1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
@@ -366,7 +367,7 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.createVariable('max_val1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.createVariable('max_val2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['max_val2'].setncattr("units", "mgChl/m3")
-    ds.variables['max_val1'].setncattr("units", "weeks")
+    ds.variables['max_val1'].setncattr("units", "mgChl/m3")
     ds.close()
     print("created netcdf {}".format(name))
 
@@ -381,7 +382,7 @@ def write_to_output_netcdf(data):
     print("pre-writing data shape: {}".format(data.shape))
     year = ds.variables['date_start1'][:].shape[0]
     print(data[:,:,:,0,0].shape)
-    ds.variables['TIME'][:] = range(0, data.shape[2])
+    ds.variables['TIME'][:] = range(0, data.shape[2] -1)
     for year in range(0, data.shape[2] -1):
         ds.variables['date_start1'][year] = data[:,:,year,0,0]
         ds.variables['date_max1'][year] = data[:,:,year,0,3]

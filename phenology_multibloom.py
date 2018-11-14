@@ -35,7 +35,7 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
 !comment[A] my approach was to save the  max Chl value found between each of the start and end time, and also the duration, i.e., estimated as number of steps between start and end times
 ! with the first derivative light availability or SST is increasing when PAR or SST first derivative is positive, and vice versa
  
-    in a run using global data that too 30 minutes, this function made up 513 seconds of the processing time
+    in a run using global data that took 30 minutes, this function made up 513 seconds of the processing time
     """
     #array_like = numpy.squeeze(array_like)
     #if it's all gone horribly wrong then this will quit out of it straight away
@@ -452,7 +452,7 @@ if __name__ == "__main__":
     parser.add_argument("--date_seperation_per_year", help="how many temporal observations we have in a year, if not specified will be guessed", default=47, required=False)
     parser.add_argument("--first_date_index", help="specify if the first date you want to include is not the first date present in the date stack", default=0, required=False)
     parser.add_argument("--intermediate_file_store", help="change where intermediate numpy files are placed, if not specified then /tmp is assumed - you should specify somewhere else if your tmp cannot handle the array sizes needed (and currently this program will fill it until it cannot).", required=False)
-    parser.add_argument("--reverse_search", help="specify the number of observations to search in the previous year, if not specified will be calculated as a representation of 100 days (date_seperation_per_year / 0.27).", required=False)
+    parser.add_argument("--reverse_search", default=False, help="specify the number of observations to search in the previous year, if not specified will be calculated as a representation of 100 days (date_seperation_per_year / 0.27).", required=False)
     #chl_variable
     #sst_variable
     parser.add_argument("--median_threshold", default=MEDIAN_THRESHOLD_DEFAULT, help="change median threshold", required=False)
@@ -466,8 +466,7 @@ if __name__ == "__main__":
     #as 100 days is 0.27 of 365 we can just do that
     if not args.reverse_search:
         reverse_search = abs(args.date_seperation_per_year // 0.27)
-
-    #TODO handle dynamic reverse search attribution
+    print("Reverse search:{}".format(reverse_search))
 
     #TODO list of files or file specified (mid november)
     if args.sst_location:
@@ -512,7 +511,7 @@ if __name__ == "__main__":
     print(chl_shape)
     create_phenology_netcdf(chl_lons, chl_lats, chl_shape, args.output)
 
-    get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=int(args.date_seperation_per_year), start_date=args.first_date_index, reverse_search=20)
+    get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=int(args.date_seperation_per_year), start_date=args.first_date_index, reverse_search=reverse_search)
 
 
 

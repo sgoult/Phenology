@@ -452,6 +452,7 @@ if __name__ == "__main__":
     parser.add_argument("--date_seperation_per_year", help="how many temporal observations we have in a year, if not specified will be guessed", default=47, required=False)
     parser.add_argument("--first_date_index", help="specify if the first date you want to include is not the first date present in the date stack", default=0, required=False)
     parser.add_argument("--intermediate_file_store", help="change where intermediate numpy files are placed, if not specified then /tmp is assumed - you should specify somewhere else if your tmp cannot handle the array sizes needed (and currently this program will fill it until it cannot).", required=False)
+    parser.add_argument("--reverse_search", help="specify the number of observations to search in the previous year, if not specified will be calculated as a representation of 100 days (date_seperation_per_year / 0.27).", required=False)
     #chl_variable
     #sst_variable
     parser.add_argument("--median_threshold", default=MEDIAN_THRESHOLD_DEFAULT, help="change median threshold", required=False)
@@ -462,6 +463,10 @@ if __name__ == "__main__":
         numpy_storage = args.intermediate_file_store
     #remember to change median threshold to percentage!
     #reverse search should be ratio of 100 days so 5 days * 20 = 100 or 8 days * 12.5 (so 13) = 100 days
+    #as 100 days is 0.27 of 365 we can just do that
+    if not args.reverse_search:
+        reverse_search = abs(args.date_seperation_per_year // 0.27)
+
     #TODO handle dynamic reverse search attribution
 
     #TODO list of files or file specified (mid november)

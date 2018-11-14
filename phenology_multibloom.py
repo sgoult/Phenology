@@ -7,8 +7,10 @@ import shutil
 import tempfile
 import glob
 
+#TODO Set dynamically from the input netcdf or user specified from command line
 FILL_VAL = -9.999999999999998e+33
 
+#TODO set this from the user inputs
 MEDIAN_THRESHOLD_DEFAULT = 5
 
 output_location = None
@@ -243,10 +245,8 @@ def prepare_sst_variables(sst_array, numpy_storage):
     """
     Creates smoothed sst, currently has a large portion commented out as source file is already the centered derivative diff data.
     """
-
     #smoothed sst
     print("sst sbx")
-    """
     sst_boxcar = numpy.apply_along_axis(numpy.convolve, 0, sst_array, numpy.ones((8,))/8, mode='valid')
     sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=sst_boxcar.dtype)
     sst_boxcar_map[:] = sst_boxcar[:]
@@ -257,7 +257,7 @@ def prepare_sst_variables(sst_array, numpy_storage):
     #get sst derivative
     print("sst der")
     sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar)
-    """
+    
     sst_der = sst_array
     sst_der_map = numpy.memmap(os.path.join(numpy_storage, "sst_der"), mode="w+", shape=sst_der.shape, dtype=sst_der.dtype)
     sst_der_map[:] = sst_der[:]
@@ -448,6 +448,8 @@ if __name__ == "__main__":
     parser.add_argument("--date_seperation_per_year", help="how many temporal observations we have in a year, if not specified will be guessed", default=47, required=False)
     parser.add_argument("--first_date_index", help="specify if the first date you want to include is not the first date present in the date stack", default=0, required=False)
     parser.add_argument("--intermediate_file_store", help="change where intermediate numpy files are placed, if not specified then /tmp is assumed - you should specify somewhere else if your tmp cannot handle the array sizes needed (and currently this program will fill it until it cannot).", required=False)
+    #chl_variable
+    #sst_variable
     parser.add_argument("--median_threshold", default=MEDIAN_THRESHOLD_DEFAULT, help="change median threshold", required=False)
     args = parser.parse_args()
     if not args.intermediate_file_store:
@@ -455,7 +457,10 @@ if __name__ == "__main__":
     else:
         numpy_storage = args.intermediate_file_store
     #remember to change median threshold to percentage!
+    #reverse search should be ratio of 100 days so 5 days * 20 = 100 or 8 days * 12.5 (so 13) = 100 days
+    #TODO handle dynamic reverse search attribution
 
+    #TODO list of files or file specified (mid november)
     if args.sst_location:
         print("sst file provided, reading array")
         sst_files = glob.glob(args.sst_location)
@@ -475,6 +480,7 @@ if __name__ == "__main__":
     if len(chl_files) == 1:
         print("only one chl file found, assuming full stack of observations")
         chl_ds = nc.Dataset(chl_files[0])
+        #test for more than 1 variable, if so quit out and complain that it doesn't know which to use
         chl_variable = [x for x in chl_ds.variables if "chl" in x.lower()][0]
         chl_array = chl_ds.variables[chl_variable][:]
     else:
@@ -493,7 +499,7 @@ if __name__ == "__main__":
     chl_dtype = 'float64'
     chl_data = chl_ds[chl_variable]
     print("creating output netcdf {}".format(args.output))
-
+    #simple regridding
     print(chl_shape)
     create_phenology_netcdf(chl_lons, chl_lats, chl_shape, args.output)
 

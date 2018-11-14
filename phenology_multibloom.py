@@ -35,6 +35,7 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
 !comment[A] my approach was to save the  max Chl value found between each of the start and end time, and also the duration, i.e., estimated as number of steps between start and end times
 ! with the first derivative light availability or SST is increasing when PAR or SST first derivative is positive, and vice versa
  
+    in a run using global data that too 30 minutes, this function made up 513 seconds of the processing time
     """
     #array_like = numpy.squeeze(array_like)
     #if it's all gone horribly wrong then this will quit out of it straight away
@@ -105,8 +106,7 @@ def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
         if date_correction:
             output_record[0] = output_record[0] - date_correction
             output_record[1] = output_record[1] - date_correction
-            #TODO double check this is actually correcting the max idx value
-            output_record[3] = output_record[3] - date_correction
+            output_record[3] = output_record[3]
         return output_record
     else:
         return [None,None,None,None,None]
@@ -117,6 +117,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
     Slices up the data based on high/low periods of SST (or otherwise), then feeds each period into get_start_index_and_duration, once finished it will output an array of shape (x, y, time, 2, 5)
     verbose will spame the terminal with information about whats going on, best to establish a few pixels you want to inspect rather than having this on all the time.
+
+    in a run using global data that too 30 minutes, this function made up 703 seconds of the processing time
+    I would guess that 500 of those seconds can be attributed to get_start_index_and_duration
     """
     
     #possibly resort and create new durations based on remaining dates
@@ -334,13 +337,15 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.createDimension('DEPTH', output_shape[1])
     ds.createDimension('TIME', None)
     ds.createVariable('LATITUDE', 'float32', dimensions=['LATITUDE'])
-    ds.variables['LATITUDE'].setncattr("units", "degrees north")
+    ds.variables['LATITUDE'].setncattr("units", "degrees_north")
     ds.variables['LATITUDE'][:] = chl_lats
     ds.createVariable('LONGITUDE', 'float32', dimensions=['LONGITUDE'])
-    ds.variables['LONGITUDE'].setncattr("units", "degrees east")
+    ds.variables['LONGITUDE'].setncattr("units", "degrees_east")
     ds.variables['LONGITUDE'][:] = chl_lons
     ds.createVariable('DEPTH', 'float32', dimensions=['DEPTH'])
-    ds.variables['DEPTH'].setncattr("units", "metres")
+    ds.variables['DEPTH'].setncattr("units", "meters")
+    ds.variables['DEPTH'].setncattr("positive", "down")
+    ds.variables['DEPTH'][:] = [0.1]
     ds.createVariable('TIME', 'float32', dimensions=['TIME'])
     ds.variables['TIME'].setncattr("units", "years")
     ds.createVariable('date_start1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
@@ -362,7 +367,7 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.createVariable('max_val1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.createVariable('max_val2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['max_val2'].setncattr("units", "mgChl/m3")
-    ds.variables['max_val1'].setncattr("units", "weeks")
+    ds.variables['max_val1'].setncattr("units", "mgChl/m3")
     ds.close()
     print("created netcdf {}".format(name))
 
@@ -372,11 +377,12 @@ def write_to_output_netcdf(data):
     """
     ds = nc.Dataset(output_location,'r+',format='NETCDF4_CLASSIC')
     data = data.astype(numpy.float32)
+    data = numpy.ma.fix_invalid(data)
     print(output_location)
     print("pre-writing data shape: {}".format(data.shape))
     year = ds.variables['date_start1'][:].shape[0]
     print(data[:,:,:,0,0].shape)
-    ds.variables['TIME'][:] = range(0, data.shape[2])
+    ds.variables['TIME'][:] = range(0, data.shape[2] -1)
     for year in range(0, data.shape[2] -1):
         ds.variables['date_start1'][year] = data[:,:,year,0,0]
         ds.variables['date_max1'][year] = data[:,:,year,0,3]
@@ -417,8 +423,6 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
         for iy in numpy.ndindex(chl_data.shape[3]):
             try:
                 verbose=False
-                if ix[0] > 85 and ix[0] < 95 and iy[0] > 180 and iy[0] < 190:
-                    verbose = True
                 year_true_start_end_array[ix,iy] = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date)
                 if verbose:
                     print("end duration array")

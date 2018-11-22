@@ -40,6 +40,7 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
     #array_like = numpy.squeeze(array_like)
     #if it's all gone horribly wrong then this will quit out of it straight away
     if len(array_like):
+        #this is 38.9% of time spent in this function
         zero_crossings = numpy.where(numpy.diff(numpy.sign(array_like)))[0]
     else:
         zero_crossings = []
@@ -58,8 +59,10 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
     for index in true_poss:
         forward_index = index + 1 if not (index + 1) >= (len(array_like)) else index
         backward_index =  index - 1 if not (index - 1) < 0 else index
+        #20% of time in function
         if array_like[forward_index] >= array_like[index] and array_like[backward_index] <= array_like[index]:
             starts.append(index)
+        #20% of time in function
         elif array_like[forward_index] <= array_like[index] and array_like[backward_index] >= array_like[index]:
             ends.append(index)
     #we know the last entry will be an end
@@ -202,10 +205,11 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             except StopIteration as e:
                 continue
         first = False
-        
+        #10% of time in function
         chl_sbx_period_slice = chl_sbx_slice[index:end_date].flatten()
         chl_period_slice = chl_slice[index:end_date].flatten()
         #get the phenology for this period, depth pads extra data if needed for numpy (we don't use this for SST model)
+        #73% of time in function
         period_chl_phenology = get_start_index_and_duration(chl_sbx_period_slice,chl_period_slice,index,depth=5,verbose=verbose)
         #if we found anything
         if len(period_chl_phenology):

@@ -40,7 +40,7 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
     #array_like = numpy.squeeze(array_like)
     #if it's all gone horribly wrong then this will quit out of it straight away
     if len(array_like):
-        zero_crossings = list(numpy.where(numpy.diff(numpy.sign(array_like)))[0])
+        zero_crossings = numpy.where(numpy.diff(numpy.sign(array_like)))[0]
     else:
         zero_crossings = []
     true_poss = zero_crossings
@@ -275,8 +275,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         else:
             ngd = None
         ngds.append(ngd)
-        total_no_of_blooms.append(len(possible_high_blooms) + len(possible_low_blooms))
-    return blooms, ngds, total_no_of_blooms
+    return blooms, ngds
 
 def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     """
@@ -402,14 +401,14 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.createVariable('max_val2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['max_val2'].setncattr("units", "mgChl/m3")
     ds.variables['max_val1'].setncattr("units", "mgChl/m3")
-    ds.createVariable('ngd', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
-    ds.variables['ngd'].setncattr("units", "observations")
     ds.createVariable('total_blooms', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['total_blooms'].setncattr("units", "observations")
+    ds.createVariable('probability', 'float32', dimensions=['DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.variables['total_blooms'].setncattr("units", "likelihood")
     ds.close()
     print("created netcdf {}".format(name))
 
-def write_to_output_netcdf(data, ngd=False, total_blooms=False):
+def write_to_output_netcdf(data, total_blooms=None, probability=None):
     """
     Loops through each year in the numpy array and writes the data to the netcdf file, this should work faster if we get rid of the loop but I can't seem to grock the logic to fix it right now.
     """
@@ -432,14 +431,16 @@ def write_to_output_netcdf(data, ngd=False, total_blooms=False):
         ds.variables['duration2'][year] = data[:,:,year,1,2]
         ds.variables['max_val1'][year] = data[:,:,year,0,4]
         ds.variables['max_val2'][year] = data[:,:,year,1,4]
-        if ngd is not None:
-            ds.variables['ngd'][year] = ngd[:,:,year]
         if total_blooms is not None:
-            ds.variables['total_blooms'][year] = ngd[:,:,year]
+            ds.variables['total_blooms'][year] = total_blooms[:,:,year]
+        if probability is not None:
+            ds.variables['probability'][:] = probability
     print(ds.variables['TIME'][:])
     ds.close()
 
 
+def total_blooms_to_probability(array_like):
+    return numpy.count_nonzero(array_like == 2) / array_like.size
 
 def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=47, start_date=0, reverse_search=20):
     #this all works on the assumption the axis 0 is time
@@ -458,36 +459,34 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     #print("doing chlorophyll initiations")
     #start_end_duration_array = numpy.apply_along_axis(get_start_index_and_duration, 0, year_chl_boxcar)
     year_true_start_end_array = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int(abs(chl_data.shape[0] / date_seperation_per_year)), 2,5))
-    ngd_array = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int(abs(chl_data.shape[0] / date_seperation_per_year))))
     total_blooms = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int(abs(chl_data.shape[0] / date_seperation_per_year))))
     year_true_start_end_array.fill(FILL_VAL)
-    ngd_array.fill(FILL_VAL)
     total_blooms.fill(FILL_VAL)
     completion_points = range(0, chl_data.shape[2], chl_data.shape[2] // 10)
     print("doing sst initiations and correction")
-    for ix in numpy.ndindex(chl_data.shape[2]):
-        for iy in numpy.ndindex(chl_data.shape[3]):
-            try:
-                verbose=False
-                results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date)
-                year_true_start_end_array[ix,iy] = results[0]
-                ngd_array[ix,iy] = results[1]
-                total_blooms[ix,iy] = results[2]
-                if verbose:
-                    print("end duration array")
-                    print(year_true_start_end_array[ix,iy])
-            except Exception as e:
-                print(e)
-                print(repr(e))
-                print(match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date))
-                print()
-        if ix[0] in completion_points:
-            print(completion_points.index(ix[0]) * 10, "% complete")
+    for ix, iy in numpy.ndindex(chl_data.shape[2], chl_data.shape[3]):
+        try:
+            verbose=False
+            results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date)
+            year_true_start_end_array[ix,iy] = results[0]
+            total_blooms[ix,iy] = results[1]
+            if verbose:
+                print("end duration array")
+                print(year_true_start_end_array[ix,iy])
+        except Exception as e:
+            print(e)
+            print(repr(e))
+            print(match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date))
+            print()
+        if ix in completion_points and iy == 0:
+            print(completion_points.index(ix) * 10, "% complete")
+    
+    probability_array = numpy.apply_along_axis(total_blooms_to_probability, 2, total_blooms)
 
     print("done sst initiations and correction")
     print("writing to netcdf")
     #needs to be extended to be able to output 3 files: sorted by calendar year, one with primary and secondary chloropjhyll maximum
-    write_to_output_netcdf(year_true_start_end_array, ngd=ngd_array, total_blooms=total_blooms)
+    write_to_output_netcdf(year_true_start_end_array, total_blooms=total_blooms, probability=probability_array)
 
     
     
@@ -495,17 +494,17 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("chl_location", help="A chlorophyll file or glob for files (e.g. chl*.nc) that can be stacked into an array of shape (time,depth,lat,lon). These must have a variable called chl, lat and lon (or contain those strings) which will be used to define the array shape")
+    parser.add_argument("chl_location", nargs='+', help="A chlorophyll file or list of chlorophyll files. These must have a variable called chl, depth, lat and lon (or contain those strings) which will be used to define the array shape")
+    parser.add_argument("--chl_var", help="specify chl variable, otherwise is guessed based on variables that contain'chl' in the name", default="chl", required=False)
     parser.add_argument("--sst_location", help="An sst file, or glob of files (e.g. sst*.nc) that matches the chlorophyll observations. if it does not match some interpolation can be attempted with --sst_date_interp", required=False)
-    parser.add_argument("--output", help="output location, default is phenology.nc in current folder", default="phenology.nc", required=False)
+    parser.add_argument("--sst_var", help="specify the sst variable name, otherwise is guessed based on variables containing 'sst'", default="sst", required=False)
+    parser.add_argument("--output", help="output filename, if not specified defaults to (chlorophyll_filename)_phenology.nc in the current folder", default=None, required=False)
     parser.add_argument("--date_seperation_per_year", help="how many temporal observations we have in a year, if not specified will be guessed", default=47, required=False)
     parser.add_argument("--first_date_index", help="specify if the first date you want to include is not the first date present in the date stack", default=0, required=False)
+    parser.add_argument("--chl_climatology", action="store_true", help="extend the input chlorophyll array by creatingidentical copied for the year previous and year next", default=0, required=False)
     parser.add_argument("--intermediate_file_store", help="change where intermediate numpy files are placed, if not specified then /tmp is assumed - you should specify somewhere else if your tmp cannot handle the array sizes needed (and currently this program will fill it until it cannot).", required=False)
     parser.add_argument("--reverse_search", default=False, help="specify the number of observations to search in the previous year, if not specified will be calculated as a representation of 100 days (date_seperation_per_year / 0.27).", required=False)
     parser.add_argument("--skip_sst_prep", action="store_true", default=False, help="skip sst preparation, instead the program will assume that the sst input is already in a state where low/high period fluctuation can be identified", required=False)
-
-    #chl_variable
-    #sst_variable
     parser.add_argument("--median_threshold", default=MEDIAN_THRESHOLD_DEFAULT, help="change median threshold", required=False)
     args = parser.parse_args()
     if not args.intermediate_file_store:
@@ -520,49 +519,60 @@ if __name__ == "__main__":
     print("Reverse search:{}".format(reverse_search))
 
     #TODO list of files or file specified (mid november)
-    if args.sst_location:
-        print("sst file provided, reading array")
-        sst_files = glob.glob(args.sst_location)
-        if len(sst_files) == 1:
+    for chl_location in args.chl_location:
+        if args.sst_location:
+            print("sst file provided, reading array")
             print("only one file found, assuming full stack of observations")
-            sst_ds = nc.Dataset(sst_files[0])
+            sst_ds = nc.Dataset(args.sst_location)
             sst_variable = [x for x in sst_ds.variables if "sst" in x.lower()][0]
             sst_array = sst_ds.variables[sst_variable][:]
-        else:
-            raise NotImplementedError
-        sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
-        print("sst_shape: {}".format(sst_shape))
-        print("sst_dtype: {}".format(sst_dtype))
-        sst_array = None
+            sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
+            print("sst_shape: {}".format(sst_shape))
+            print("sst_dtype: {}".format(sst_dtype))
+            sst_array = None
 
-    chl_files = glob.glob(args.chl_location)
-    if len(chl_files) == 1:
-        print("only one chl file found, assuming full stack of observations")
-        chl_ds = nc.Dataset(chl_files[0])
+        chl_files = chl_location
+        print("calculating on {}".format(chl_files))
+        chl_filename = chl_location
+        chl_ds = nc.Dataset(chl_location)
         #test for more than 1 variable, if so quit out and complain that it doesn't know which to use
         chl_variable = [x for x in chl_ds.variables if "chl" in x.lower()][0]
         chl_array = chl_ds.variables[chl_variable][:]
-    else:
-        raise NotImplementedError
-    chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage)
-    print("chl_shape: {}".format(chl_shape))
-    print("chl_dtype: {}".format(chl_dtype))
+                
 
-    chl_ds = nc.Dataset(args.chl_location)
-    chl_variable = [x for x in chl_ds.variables if "chl" in x.lower()][0]
-    chl_lon_var = [x for x in chl_ds.variables if "lon" in x.lower()][0]
-    chl_lat_var = [x for x in chl_ds.variables if "lat" in x.lower()][0]
-    chl_lons = chl_ds.variables[chl_lon_var][:]
-    chl_lats = chl_ds.variables[chl_lat_var][:]
-    sst_dtype = 'float64'
-    chl_dtype = 'float64'
-    chl_data = chl_ds[chl_variable]
-    print("creating output netcdf {}".format(args.output))
-    #simple regridding
-    print(chl_shape)
-    create_phenology_netcdf(chl_lons, chl_lats, chl_shape, args.output)
+        chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage)
+        print("chl_shape: {}".format(chl_shape))
+        print("chl_dtype: {}".format(chl_dtype))
 
-    get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=int(args.date_seperation_per_year), start_date=args.first_date_index, reverse_search=reverse_search)
+        chl_ds = nc.Dataset(chl_location)
+        chl_variable = [x for x in chl_ds.variables if "chl" in x.lower()][0]
+        chl_lon_var = [x for x in chl_ds.variables if "lon" in x.lower()][0]
+        chl_lat_var = [x for x in chl_ds.variables if "lat" in x.lower()][0]
+        chl_lons = chl_ds.variables[chl_lon_var][:]
+        chl_lats = chl_ds.variables[chl_lat_var][:]
+        sst_dtype = 'float64'
+        chl_dtype = 'float64'
+        chl_data = chl_ds[chl_variable]
+
+        if args.output:
+            output = args.output
+        else:
+            output = chl_filename.replace(".nc", "_phenology.nc")
+        
+        print("creating output netcdf {}".format(output))
+        #simple regridding
+        print(chl_shape)
+        create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output)
+
+        get_multi_year_two_blooms_output(numpy_storage,
+                                        chl_shape,
+                                        chl_dtype, 
+                                        chl_data, 
+                                        sst_shape, 
+                                        sst_dtype, 
+                                        date_seperation_per_year=int(args.date_seperation_per_year), 
+                                        start_date=args.first_date_index, 
+                                        reverse_search=reverse_search)
 
 
 

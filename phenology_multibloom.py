@@ -226,6 +226,19 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
         possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
 
+        """
+        For date sorting and output should we take something like 
+
+        jjason = [all blooms between june and november]
+        djfmam = [all blooms between december and may]
+        this would need to be worked out from the number of observations per year - is it based on the date of the maximum?
+
+
+        then skip from here to line 259 and establish the high/low in jjason/djfmam
+        count the ngd/total_blooms
+        output as seperate set of arrays
+        """
+
         if verbose:
             print(year)
             print("found ", len(possible_high_blooms), " highs")

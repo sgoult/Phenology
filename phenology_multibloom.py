@@ -172,7 +172,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         elif len(lows) and not len(highs):
             highs = [0, len(array_like)]
         else:
-            return [[None,None,None,None,None], [None,None,None,None,None]]
+            return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year)], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year)]
     except Exception as e:
         #triggered once, but was helpful to know what the contents were
         print(highs)
@@ -219,10 +219,13 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     #to remind ourselves what the phenology records look like
     #[start,end,end-start,max_idx,chl_values[max_idx]]
     blooms = []
+    ngds = []
+    total_no_of_blooms = []
     for year in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year):
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
         possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
         possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
+
         if verbose:
             print(year)
             print("found ", len(possible_high_blooms), " highs")
@@ -241,27 +244,45 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             print(low, high)
         #spit out the low period and high period for this year
         blooms.append([low,high])
+        #establish if the date is within the year - does this need to be tested for?
+        #alternative is (date_seperation_per_year // 0.630136986) to get in first 230 days but this seems wrong
+        #we have all of the blooms in a year, could establish how many total bloom peaks over a year vs 2 blooms - is this necessarily much higher than
+        if low[3] or high[3]:
+            if low[3]:
+                n1 = 1 if abs(low[3]) <= (date_seperation_per_year) else 0
+            else:
+                n1 = 0
+            if high[3]:
+                n2 = 1 if abs(high[3]) <= (date_seperation_per_year) else 0
+            else:
+                n2 = 0
+            no1 = 1 if n1 == 1 and n2 != 1 else 0
+            no2 = 1 if n2 == 1 and n1 != 1 else 0
+            ngd = 2 if not no1 or no2 else no1 if no1 else no2
+        else:
+            ngd = None
+        ngds.append(ngd)
+        total_no_of_blooms.append(len(possible_high_blooms) + len(possible_low_blooms))
+    return blooms, ngds, total_no_of_blooms
 
-    return blooms
-
-def prepare_sst_variables(sst_array, numpy_storage):
+def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     """
     Creates smoothed sst, currently has a large portion commented out as source file is already the centered derivative diff data.
     """
     #smoothed sst
-    print("sst sbx")
-    sst_boxcar = numpy.apply_along_axis(numpy.convolve, 0, sst_array, numpy.ones((8,))/8, mode='valid')
-    sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=sst_boxcar.dtype)
-    sst_boxcar_map[:] = sst_boxcar[:]
-    sst_boxcar = None
-    sst_boxcar = sst_boxcar_map
-    sst_boxcar_map = None
-    sst_array = None
-    #get sst derivative
-    print("sst der")
-    sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar)
-    
-    sst_der = sst_array
+    if not skip:
+        sst_boxcar = numpy.apply_along_axis(numpy.convolve, 0, sst_array, numpy.ones((8,))/8, mode='valid')
+        sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=sst_boxcar.dtype)
+        sst_boxcar_map[:] = sst_boxcar[:]
+        sst_boxcar = None
+        sst_boxcar = sst_boxcar_map
+        sst_boxcar_map = None
+        sst_array = None
+        #get sst derivative
+        sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar)
+    else:
+        print("Skipped sst data preparation")
+        sst_der = sst_array
     sst_der_map = numpy.memmap(os.path.join(numpy_storage, "sst_der"), mode="w+", shape=sst_der.shape, dtype=sst_der.dtype)
     sst_der_map[:] = sst_der[:]
     return sst_der.shape, sst_der.dtype
@@ -368,10 +389,14 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.createVariable('max_val2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
     ds.variables['max_val2'].setncattr("units", "mgChl/m3")
     ds.variables['max_val1'].setncattr("units", "mgChl/m3")
+    ds.createVariable('ngd', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.variables['ngd'].setncattr("units", "observations")
+    ds.createVariable('total_blooms', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.variables['total_blooms'].setncattr("units", "observations")
     ds.close()
     print("created netcdf {}".format(name))
 
-def write_to_output_netcdf(data):
+def write_to_output_netcdf(data, ngd=False, total_blooms=False):
     """
     Loops through each year in the numpy array and writes the data to the netcdf file, this should work faster if we get rid of the loop but I can't seem to grock the logic to fix it right now.
     """
@@ -380,7 +405,6 @@ def write_to_output_netcdf(data):
     data = numpy.ma.fix_invalid(data)
     print(output_location)
     print("pre-writing data shape: {}".format(data.shape))
-    year = ds.variables['date_start1'][:].shape[0]
     print(data[:,:,:,0,0].shape)
     ds.variables['TIME'][:] = range(0, data.shape[2] -1)
     for year in range(0, data.shape[2] -1):
@@ -388,12 +412,17 @@ def write_to_output_netcdf(data):
         ds.variables['date_max1'][year] = data[:,:,year,0,3]
         ds.variables['date_end1'][year] = data[:,:,year,0,1]
         ds.variables['duration1'][year] = data[:,:,year,0,2]
+        print(data[:,:,year,1,0])
         ds.variables['date_start2'][year] = data[:,:,year,1,0]
         ds.variables['date_max2'][year] = data[:,:,year,1,3]
         ds.variables['date_end2'][year] = data[:,:,year,1,1]
         ds.variables['duration2'][year] = data[:,:,year,1,2]
         ds.variables['max_val1'][year] = data[:,:,year,0,4]
         ds.variables['max_val2'][year] = data[:,:,year,1,4]
+        if ngd is not None:
+            ds.variables['ngd'][year] = ngd[:,:,year]
+        if total_blooms is not None:
+            ds.variables['total_blooms'][year] = ngd[:,:,year]
     print(ds.variables['TIME'][:])
     ds.close()
 
@@ -416,14 +445,21 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     #print("doing chlorophyll initiations")
     #start_end_duration_array = numpy.apply_along_axis(get_start_index_and_duration, 0, year_chl_boxcar)
     year_true_start_end_array = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int(abs(chl_data.shape[0] / date_seperation_per_year)), 2,5))
+    ngd_array = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int(abs(chl_data.shape[0] / date_seperation_per_year))))
+    total_blooms = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int(abs(chl_data.shape[0] / date_seperation_per_year))))
     year_true_start_end_array.fill(FILL_VAL)
+    ngd_array.fill(FILL_VAL)
+    total_blooms.fill(FILL_VAL)
     completion_points = range(0, chl_data.shape[2], chl_data.shape[2] // 10)
     print("doing sst initiations and correction")
     for ix in numpy.ndindex(chl_data.shape[2]):
         for iy in numpy.ndindex(chl_data.shape[3]):
             try:
                 verbose=False
-                year_true_start_end_array[ix,iy] = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date)
+                results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date)
+                year_true_start_end_array[ix,iy] = results[0]
+                ngd_array[ix,iy] = results[1]
+                total_blooms[ix,iy] = results[2]
                 if verbose:
                     print("end duration array")
                     print(year_true_start_end_array[ix,iy])
@@ -438,7 +474,7 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     print("done sst initiations and correction")
     print("writing to netcdf")
     #needs to be extended to be able to output 3 files: sorted by calendar year, one with primary and secondary chloropjhyll maximum
-    write_to_output_netcdf(year_true_start_end_array)
+    write_to_output_netcdf(year_true_start_end_array, ngd=ngd_array, total_blooms=total_blooms)
 
     
     
@@ -453,6 +489,8 @@ if __name__ == "__main__":
     parser.add_argument("--first_date_index", help="specify if the first date you want to include is not the first date present in the date stack", default=0, required=False)
     parser.add_argument("--intermediate_file_store", help="change where intermediate numpy files are placed, if not specified then /tmp is assumed - you should specify somewhere else if your tmp cannot handle the array sizes needed (and currently this program will fill it until it cannot).", required=False)
     parser.add_argument("--reverse_search", default=False, help="specify the number of observations to search in the previous year, if not specified will be calculated as a representation of 100 days (date_seperation_per_year / 0.27).", required=False)
+    parser.add_argument("--skip_sst_prep", action="store_true", default=False, help="skip sst preparation, instead the program will assume that the sst input is already in a state where low/high period fluctuation can be identified", required=False)
+
     #chl_variable
     #sst_variable
     parser.add_argument("--median_threshold", default=MEDIAN_THRESHOLD_DEFAULT, help="change median threshold", required=False)
@@ -465,7 +503,7 @@ if __name__ == "__main__":
     #reverse search should be ratio of 100 days so 5 days * 20 = 100 or 8 days * 12.5 (so 13) = 100 days
     #as 100 days is 0.27 of 365 we can just do that
     if not args.reverse_search:
-        reverse_search = abs(args.date_seperation_per_year // 0.27)
+        reverse_search = int(round(int(args.date_seperation_per_year) * 0.27))
     print("Reverse search:{}".format(reverse_search))
 
     #TODO list of files or file specified (mid november)
@@ -479,7 +517,7 @@ if __name__ == "__main__":
             sst_array = sst_ds.variables[sst_variable][:]
         else:
             raise NotImplementedError
-        sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage)
+        sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
         print("sst_shape: {}".format(sst_shape))
         print("sst_dtype: {}".format(sst_dtype))
         sst_array = None

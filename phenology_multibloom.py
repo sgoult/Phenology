@@ -528,7 +528,7 @@ if __name__ == "__main__":
             print("sst file provided, reading array")
             print("only one file found, assuming full stack of observations")
             sst_ds = nc.Dataset(args.sst_location)
-            sst_variable = [x for x in sst_ds.variables if "sst" in x.lower()][0]
+            sst_variable = [x for x in sst_ds.variables if args.sst_var in x.lower()][0]
             sst_array = sst_ds.variables[sst_variable][:]
             sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
             print("sst_shape: {}".format(sst_shape))
@@ -540,7 +540,7 @@ if __name__ == "__main__":
         chl_filename = chl_location
         chl_ds = nc.Dataset(chl_location)
         #test for more than 1 variable, if so quit out and complain that it doesn't know which to use
-        chl_variable = [x for x in chl_ds.variables if "chl" in x.lower()][0]
+        chl_variable = [x for x in chl_ds.variables if args.chl_var in x.lower()][0]
         chl_array = chl_ds.variables[chl_variable][:]
                 
 
@@ -549,7 +549,7 @@ if __name__ == "__main__":
         print("chl_dtype: {}".format(chl_dtype))
 
         chl_ds = nc.Dataset(chl_location)
-        chl_variable = [x for x in chl_ds.variables if "chl" in x.lower()][0]
+        chl_variable = [x for x in chl_ds.variables if args.chl_var in x.lower()][0]
         chl_lon_var = [x for x in chl_ds.variables if "lon" in x.lower()][0]
         chl_lat_var = [x for x in chl_ds.variables if "lat" in x.lower()][0]
         chl_lons = chl_ds.variables[chl_lon_var][:]

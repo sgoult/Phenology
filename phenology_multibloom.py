@@ -6,6 +6,7 @@ import netCDF4 as nc
 import shutil
 import tempfile
 import glob
+import sys
 
 #TODO Set dynamically from the input netcdf or user specified from command line
 FILL_VAL = -9.999999999999998e+33
@@ -534,6 +535,13 @@ if __name__ == "__main__":
         chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage)
         print("chl_shape: {}".format(chl_shape))
         print("chl_dtype: {}".format(chl_dtype))
+
+        if sst_shape[2:] != chl_shape[2:]:
+            print("sst and chlorophyll x,y array shapes do not match got:")
+            print("chlorophyll:",chl_shape[2:])
+            print("sst:",sst_shape[2:])
+            print("quitting!")
+            sys.exit()
 
         chl_ds = nc.Dataset(chl_location)
         chl_variable = [x for x in chl_ds.variables if args.chl_var in x.lower()][0]

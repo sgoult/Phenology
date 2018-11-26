@@ -80,8 +80,8 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
            if verbose:
                print("chl values")
                print(chl_values[start:end])
-           max_idx = numpy.nanargmax(chl_values[start:end]) + start
-           dates.append([start + date_offset,end + date_offset,end-start,max_idx,chl_values[max_idx]])
+           max_idx = numpy.nanargmax(chl_values[start:end])
+           dates.append([start + date_offset,end + date_offset,end-start,max_idx,chl_values[max_idx + start]])
         except StopIteration:
             continue
         except Exception as e:
@@ -481,7 +481,14 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     write_to_output_netcdf(year_true_start_end_array, total_blooms=total_blooms, probability=probability_array)
 
     
-    
+def extend_array(array_like, entries_per_year, start_date=0):
+    #take first year
+    first_entry = array_like[start_date:start_date + entries_per_year]
+    last_entry = array_like[-entries_per_year:]
+    #stick em together
+    output = numpy.concatenate([first_entry, array_like, last_entry], axis = 0)
+    return output
+
 
 
 if __name__ == "__main__":
@@ -498,6 +505,10 @@ if __name__ == "__main__":
     parser.add_argument("--reverse_search", default=False, help="specify the number of observations to search in the previous year, if not specified will be calculated as a representation of 100 days (date_seperation_per_year / 0.27).", required=False)
     parser.add_argument("--skip_sst_prep", action="store_true", default=False, help="skip sst preparation, instead the program will assume that the sst input is already in a state where low/high period fluctuation can be identified", required=False)
     parser.add_argument("--median_threshold", default=MEDIAN_THRESHOLD_DEFAULT, help="change median threshold", required=False)
+    #probably needs a better description!
+    #give options for both since we might end up in a situation where sst is 3 years and chl is one year (or vice versa)
+    parser.add_argument("--extend_chl_data", default=False, action="store_true", help="extends chlorophyll by copying the (central) chl array to the year previous and year next")
+    parser.add_argument("--extend_sst_data", default=False, action="store_true", help="extends sea surfaace temperature by copying the (central) chl array to the year previous and year next")
     args = parser.parse_args()
     if not args.intermediate_file_store:
         numpy_storage = tempfile.mkdtemp(prefix="phenology_")
@@ -518,6 +529,8 @@ if __name__ == "__main__":
             sst_ds = nc.Dataset(args.sst_location)
             sst_variable = [x for x in sst_ds.variables if args.sst_var in x.lower()][0]
             sst_array = sst_ds.variables[sst_variable][:]
+            if args.extend_sst_data:
+                sst_array = extend_array(sst_array, args.date_seperation_per_year, args.first_date_index)
             sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
             print("sst_shape: {}".format(sst_shape))
             print("sst_dtype: {}".format(sst_dtype))
@@ -529,8 +542,14 @@ if __name__ == "__main__":
         chl_ds = nc.Dataset(chl_location)
         #test for more than 1 variable, if so quit out and complain that it doesn't know which to use
         chl_variable = [x for x in chl_ds.variables if args.chl_var in x.lower()][0]
+        chl_lon_var = [x for x in chl_ds.variables if "lon" in x.lower()][0]
+        chl_lat_var = [x for x in chl_ds.variables if "lat" in x.lower()][0]
+        chl_lons = chl_ds.variables[chl_lon_var][:]
+        chl_lats = chl_ds.variables[chl_lat_var][:]
         chl_array = chl_ds.variables[chl_variable][:]
-                
+
+        if args.extend_chl_data:
+            chl_array = extend_array(chl_array, args.date_seperation_per_year, args.first_date_index)
 
         chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage)
         print("chl_shape: {}".format(chl_shape))
@@ -543,15 +562,9 @@ if __name__ == "__main__":
             print("quitting!")
             sys.exit()
 
-        chl_ds = nc.Dataset(chl_location)
-        chl_variable = [x for x in chl_ds.variables if args.chl_var in x.lower()][0]
-        chl_lon_var = [x for x in chl_ds.variables if "lon" in x.lower()][0]
-        chl_lat_var = [x for x in chl_ds.variables if "lat" in x.lower()][0]
-        chl_lons = chl_ds.variables[chl_lon_var][:]
-        chl_lats = chl_ds.variables[chl_lat_var][:]
+        #TODO set dynamically
         sst_dtype = 'float64'
         chl_dtype = 'float64'
-        chl_data = chl_ds[chl_variable]
 
         if args.output:
             output = args.output
@@ -566,7 +579,7 @@ if __name__ == "__main__":
         get_multi_year_two_blooms_output(numpy_storage,
                                         chl_shape,
                                         chl_dtype, 
-                                        chl_data, 
+                                        chl_array, 
                                         sst_shape, 
                                         sst_dtype, 
                                         date_seperation_per_year=int(args.date_seperation_per_year), 

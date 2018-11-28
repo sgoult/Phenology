@@ -81,7 +81,7 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
                print("chl values")
                print(chl_values[start:end])
            max_idx = numpy.nanargmax(chl_values[start:end])
-           dates.append([start + date_offset,end + date_offset,end-start,max_idx,chl_values[max_idx + start]])
+           dates.append([start + date_offset,end + date_offset,end-start,max_idx +  start -1,chl_values[max_idx + start -1]])
         except StopIteration:
             continue
         except Exception as e:
@@ -110,7 +110,7 @@ def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
         if date_correction:
             output_record[0] = output_record[0] - date_correction
             output_record[1] = output_record[1] - date_correction
-            output_record[3] = output_record[3]
+            output_record[3] = output_record[3] - date_correction
         return output_record
     else:
         return [None,None,None,None,None]
@@ -225,7 +225,6 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     #[start,end,end-start,max_idx,chl_values[max_idx]]
     blooms = []
     ngds = []
-    total_no_of_blooms = []
     for year in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year):
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
         possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
@@ -253,6 +252,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #alternative is (date_seperation_per_year // 0.630136986) to get in first 230 days but this seems wrong
         #we have all of the blooms in a year, could establish how many total bloom peaks over a year vs 2 blooms - is this necessarily much higher than
         if low[3] or high[3]:
+            """
             if low[3]:
                 n1 = 1 if abs(low[3]) <= (date_seperation_per_year) else 0
             else:
@@ -264,6 +264,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             no1 = 1 if n1 == 1 and n2 != 1 else 0
             no2 = 1 if n2 == 1 and n1 != 1 else 0
             ngd = 2 if not no1 or no2 else no1 if no1 else no2
+            """
+            ngd = len(possible_low_blooms) + len(possible_high_blooms)
         else:
             ngd = None
         ngds.append(ngd)
@@ -276,6 +278,8 @@ def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     #smoothed sst
     if not skip:
         sst_boxcar = numpy.apply_along_axis(numpy.convolve, 0, sst_array, numpy.ones((8,))/8, mode='valid')
+        fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])), mask=numpy.ones((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])))
+        sst_boxcar = numpy.concatenate([fill_arr, fill_arr, fill_arr, sst_boxcar, fill_arr, fill_arr, fill_arr, fill_arr])
         sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=sst_boxcar.dtype)
         sst_boxcar_map[:] = sst_boxcar[:]
         sst_boxcar = None
@@ -291,7 +295,7 @@ def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     sst_der_map[:] = sst_der[:]
     return sst_der.shape, sst_der.dtype
 
-def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
+def prepare_chl_variables(chl_array, numpy_storage, median_threshold=1.2):
     """
     Creates the smoothed anomaly chlorophyll data, saves a file to the temporary directory that is read as a mem map later to conserve resources.
     """
@@ -311,7 +315,7 @@ def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
     
     #get anomalies
     print("anomaly")
-    anomaly = chl_array - (med5*1.2)
+    anomaly = chl_array - (med5*median_threshold)
     anomaly_map = numpy.memmap(os.path.join(numpy_storage, "chl_anomaly"), mode="w+", shape=anomaly.shape, dtype=anomaly.dtype)
     anomaly_map[:] = anomaly[:]
     anomaly = anomaly_map
@@ -321,7 +325,7 @@ def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
 
     #get cumsum of anomalies
     print("chl cumsum")
-    chl_cumsum = numpy.ma.cumsum(anomaly,axis=0)
+    chl_cumsum = numpy.ma.cumsum(anomaly,axis=1)
     chl_cumsum_map = numpy.memmap(os.path.join(numpy_storage, "chl_cumsum"), mode="w+", shape=chl_cumsum.shape, dtype=chl_cumsum.dtype)
     chl_cumsum_map[:] = chl_cumsum[:]
     chl_cumsum = chl_cumsum_map
@@ -341,6 +345,8 @@ def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
     #boxcar filter with width of 3 (sbx) should be something like this:
     print("chl sbx")
     chl_boxcar = numpy.apply_along_axis(numpy.convolve, 0, chl_der, numpy.ones((8,))/8, mode='valid')
+    fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,chl_boxcar.shape[2],chl_boxcar.shape[3])), mask=numpy.ones((1,1,chl_boxcar.shape[2],chl_boxcar.shape[3])))
+    chl_boxcar = numpy.concatenate([fill_arr, fill_arr, fill_arr, chl_boxcar, fill_arr, fill_arr, fill_arr, fill_arr])
     chl_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "chl_sbx"), mode="w+", shape=chl_boxcar.shape, dtype=chl_boxcar.dtype)
     chl_boxcar_map[:] = chl_boxcar[:]
     chl_boxcar = None
@@ -357,8 +363,8 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     output_location = name
     ds = nc.Dataset(name,'w',format='NETCDF4_CLASSIC')
 
-    ds.createDimension('LONGITUDE', output_shape[3])
-    ds.createDimension('LATITUDE', output_shape[2])
+    ds.createDimension('LONGITUDE', chl_lons.shape[0])
+    ds.createDimension('LATITUDE', chl_lats.shape[0])
     ds.createDimension('DEPTH', output_shape[1])
     ds.createDimension('TIME', None)
     ds.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
@@ -373,29 +379,30 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.variables['DEPTH'][:] = [0.1]
     ds.createVariable('TIME', 'float32', dimensions=['TIME'])
     ds.variables['TIME'].setncattr("units", "years")
-    ds.createVariable('date_start1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    #switch back to LATITIUDE and LONGITUDE
+    ds.createVariable('date_start1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['date_start1'].setncattr("units", "weeks")
-    ds.createVariable('date_max1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('date_max1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['date_max1'].setncattr("units", "weeks")
-    ds.createVariable('date_end1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('date_end1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['date_end1'].setncattr("units", "weeks")
-    ds.createVariable('duration1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('duration1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['duration1'].setncattr("units", "weeks")
-    ds.createVariable('date_start2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('date_start2', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['date_start2'].setncattr("units", "weeks")
-    ds.createVariable('date_max2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('date_max2', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['date_max2'].setncattr("units", "weeks")
-    ds.createVariable('date_end2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('date_end2', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['date_end2'].setncattr("units", "weeks")
-    ds.createVariable('duration2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('duration2', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['duration2'].setncattr("units", "weeks")
-    ds.createVariable('max_val1', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
-    ds.createVariable('max_val2', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('max_val1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('max_val2', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['max_val2'].setncattr("units", "mgChl/m3")
     ds.variables['max_val1'].setncattr("units", "mgChl/m3")
-    ds.createVariable('total_blooms', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('total_blooms', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['total_blooms'].setncattr("units", "observations")
-    ds.createVariable('probability', 'float32', dimensions=['DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('probability', 'float32', dimensions=['DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['total_blooms'].setncattr("units", "likelihood")
     ds.close()
     print("created netcdf {}".format(name))
@@ -492,7 +499,7 @@ def extend_array(array_like, entries_per_year, start_date=0):
     last_entry = array_like[-entries_per_year:]
     #stick em together
     output = numpy.concatenate([first_entry, array_like, last_entry], axis = 0)
-    return output
+    return output, start_date + entries_per_year
 
 
 
@@ -541,11 +548,9 @@ if __name__ == "__main__":
             sst_lats = sst_ds.variables[sst_lat_var][:]
             sst_array = sst_ds.variables[sst_variable][:]
             if args.extend_sst_data:
-                sst_array = extend_array(sst_array, date_seperation_per_year, args.first_date_index)
+                sst_array, _ = extend_array(sst_array, date_seperation_per_year, args.first_date_index)
             if args.reshape:
                 sst_array.shape = (sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])
-            if not (sst_array.shape[2] == sst_lats.shape[0] and sst_array.shape[3] == sst_lons.shape[0]):
-                sst_array.shape = (sst_array.shape[0], sst_array.shape[1], sst_array.shape[3], sst_array.shape[2])
             sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
             print("sst_shape: {}".format(sst_shape))
             print("sst_dtype: {}".format(sst_dtype))
@@ -561,16 +566,25 @@ if __name__ == "__main__":
         chl_lat_var = [x for x in chl_ds.variables if "lat" in x.lower()][0]
         chl_lons = chl_ds.variables[chl_lon_var][:]
         chl_lats = chl_ds.variables[chl_lat_var][:]
+        print("lats shape",chl_lats.shape)
+        print("lons shape",chl_lons.shape)
         chl_array = chl_ds.variables[chl_variable][:]
         if args.reshape:
             chl_array.shape = (chl_array.shape[0], 1, chl_array.shape[1], chl_array.shape[2])
 
+        #check if there are any nans in the data
+        chl_array = numpy.ma.masked_invalid(chl_array)
+
+        """
         if not (chl_array.shape[2] == chl_lats.shape[0] and chl_array.shape[3] == chl_lons.shape[0]):
             print("adjusting to flip lat and lon")
             chl_array.shape = (chl_array.shape[0], chl_array.shape[1], chl_array.shape[3], chl_array.shape[2])
-
+        """
+        start_date = None
         if args.extend_chl_data:
-            chl_array = extend_array(chl_array, date_seperation_per_year, args.first_date_index)
+            chl_array, start_date = extend_array(chl_array, date_seperation_per_year, args.first_date_index)
+
+        start_date = args.first_date_index if not start_date else start_date
 
         chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage)
         print("chl_shape: {}".format(chl_shape))

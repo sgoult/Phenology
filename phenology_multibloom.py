@@ -79,9 +79,9 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
            end = next(x for x in ends if x > start)
            if verbose:
                print("chl values")
-               print(chl_values[start:end])
            max_idx = numpy.nanargmax(chl_values[start:end])
-           dates.append([start + date_offset,end + date_offset,end-start,max_idx +  start -1,chl_values[max_idx + start -1]])
+           dates.append([start + date_offset,end + date_offset,end-start,max_idx + date_offset + start - 1,chl_values[max_idx + start -1]])
+           max_idx = None
         except StopIteration:
             continue
         except Exception as e:
@@ -110,7 +110,7 @@ def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
         if date_correction:
             output_record[0] = output_record[0] - date_correction
             output_record[1] = output_record[1] - date_correction
-            output_record[3] = output_record[3] - date_correction
+            output_record[3] = output_record[3]
         return output_record
     else:
         return [None,None,None,None,None]
@@ -176,7 +176,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         elif len(lows) and not len(highs):
             highs = [0, len(array_like)]
         else:
-            return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year)], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year)]
+            return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year)]
     except Exception as e:
         #triggered once, but was helpful to know what the contents were
         print(highs)
@@ -251,8 +251,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #establish if the date is within the year - does this need to be tested for?
         #alternative is (date_seperation_per_year // 0.630136986) to get in first 230 days but this seems wrong
         #we have all of the blooms in a year, could establish how many total bloom peaks over a year vs 2 blooms - is this necessarily much higher than
+        ngd = len(possible_low_blooms) + len(possible_high_blooms)
+        """
         if low[3] or high[3]:
-            """
             if low[3]:
                 n1 = 1 if abs(low[3]) <= (date_seperation_per_year) else 0
             else:
@@ -264,10 +265,10 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             no1 = 1 if n1 == 1 and n2 != 1 else 0
             no2 = 1 if n2 == 1 and n1 != 1 else 0
             ngd = 2 if not no1 or no2 else no1 if no1 else no2
-            """
-            ngd = len(possible_low_blooms) + len(possible_high_blooms)
+            ngdp = 0
         else:
             ngd = None
+        """
         ngds.append(ngd)
     return blooms, ngds
 
@@ -457,8 +458,9 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     sst_der = numpy.ma.masked_where((sst_der == FILL_VAL), sst_der)
     #print("doing chlorophyll initiations")
     #start_end_duration_array = numpy.apply_along_axis(get_start_index_and_duration, 0, year_chl_boxcar)
-    year_true_start_end_array = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int(abs(chl_data.shape[0] / date_seperation_per_year)), 2,5))
-    total_blooms = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int(abs(chl_data.shape[0] / date_seperation_per_year))))
+    year_true_start_end_array = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int((chl_data.shape[0] -start_date) // date_seperation_per_year), 2,5))
+    print(int((chl_data.shape[0] -start_date) // date_seperation_per_year))
+    total_blooms = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int((chl_data.shape[0] -start_date) // date_seperation_per_year)))
     year_true_start_end_array.fill(FILL_VAL)
     total_blooms.fill(FILL_VAL)
     completion_points = range(0, chl_data.shape[2], chl_data.shape[2] // 10)
@@ -618,5 +620,5 @@ if __name__ == "__main__":
                                         sst_shape, 
                                         sst_dtype, 
                                         date_seperation_per_year=date_seperation_per_year, 
-                                        start_date=args.first_date_index, 
+                                        start_date=start_date, 
                                         reverse_search=reverse_search)

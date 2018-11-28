@@ -110,7 +110,7 @@ def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
         if date_correction:
             output_record[0] = output_record[0] - date_correction
             output_record[1] = output_record[1] - date_correction
-            output_record[3] = output_record[3]
+            output_record[3] = output_record[3] - date_correction
         return output_record
     else:
         return [None,None,None,None,None]
@@ -207,11 +207,15 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
                 continue
         first = False
         #10% of time in function
-        chl_sbx_period_slice = chl_sbx_slice[index:end_date].flatten()
-        chl_period_slice = chl_slice[index:end_date].flatten()
+        #each low/high period is treated as a seperate entity, so we can look forward and backward in time without worrying too much about the overlap
+        pad = int(round((end_date - index) * 0.20))
+        end_date = int(round(end_date + pad))
+        start = index - pad if index >= pad else index
+        chl_sbx_period_slice = chl_sbx_slice[start:end_date].flatten()
+        chl_period_slice = chl_slice[start:end_date].flatten()
         #get the phenology for this period, depth pads extra data if needed for numpy (we don't use this for SST model)
         #73% of time in function
-        period_chl_phenology = get_start_index_and_duration(chl_sbx_period_slice,chl_period_slice,index,depth=5,verbose=verbose)
+        period_chl_phenology = get_start_index_and_duration(chl_sbx_period_slice,chl_period_slice,start,depth=5,verbose=verbose)
         #if we found anything
         if len(period_chl_phenology):
             #loop through them and add them to the high/low mega lists
@@ -534,7 +538,7 @@ if __name__ == "__main__":
     #as 100 days is 0.27 of 365 we can just do that
     date_seperation_per_year = int(args.date_seperation_per_year)
     if not args.reverse_search:
-        reverse_search = int(round(int() * 0.27))
+        reverse_search = int(round(int(args.date_seperation_per_year) * 0.28))
     print("Reverse search:{}".format(reverse_search))
 
     #TODO list of files or file specified (mid november)

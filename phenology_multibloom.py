@@ -321,7 +321,7 @@ def prepare_chl_variables(chl_array, numpy_storage, median_threshold=None):
 
     #get cumsum of anomalies
     print("chl cumsum")
-    chl_cumsum = numpy.ma.cumsum(anomaly,axis=1)
+    chl_cumsum = numpy.ma.cumsum(anomaly,axis=0)
     chl_cumsum_map = numpy.memmap(os.path.join(numpy_storage, "chl_cumsum"), mode="w+", shape=chl_cumsum.shape, dtype=chl_cumsum.dtype)
     chl_cumsum_map[:] = chl_cumsum[:]
     chl_cumsum = chl_cumsum_map
@@ -361,10 +361,10 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.createDimension('LATITUDE', output_shape[2])
     ds.createDimension('DEPTH', output_shape[1])
     ds.createDimension('TIME', None)
-    ds.createVariable('LATITUDE', 'float32', dimensions=['LATITUDE'])
+    ds.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
     ds.variables['LATITUDE'].setncattr("units", "degrees_north")
     ds.variables['LATITUDE'][:] = chl_lats
-    ds.createVariable('LONGITUDE', 'float32', dimensions=['LONGITUDE'])
+    ds.createVariable('LONGITUDE', 'float64', dimensions=['LONGITUDE'])
     ds.variables['LONGITUDE'].setncattr("units", "degrees_east")
     ds.variables['LONGITUDE'][:] = chl_lons
     ds.createVariable('DEPTH', 'float32', dimensions=['DEPTH'])
@@ -514,6 +514,7 @@ if __name__ == "__main__":
     #give options for both since we might end up in a situation where sst is 3 years and chl is one year (or vice versa)
     parser.add_argument("--extend_chl_data", default=False, action="store_true", help="extends chlorophyll by copying the (central) chl array to the year previous and year next")
     parser.add_argument("--extend_sst_data", default=False, action="store_true", help="extends sea surfaace temperature by copying the (central) chl array to the year previous and year next")
+    parser.add_argument("--reshape", default=False, action="store_true", help="reshape to be t, 1, x, y")
     args = parser.parse_args()
     if not args.intermediate_file_store:
         numpy_storage = tempfile.mkdtemp(prefix="phenology_")
@@ -522,8 +523,9 @@ if __name__ == "__main__":
     #remember to change median threshold to percentage!
     #reverse search should be ratio of 100 days so 5 days * 20 = 100 or 8 days * 12.5 (so 13) = 100 days
     #as 100 days is 0.27 of 365 we can just do that
+    date_seperation_per_year = int(args.date_seperation_per_year)
     if not args.reverse_search:
-        reverse_search = int(round(int(args.date_seperation_per_year) * 0.27))
+        reverse_search = int(round(int() * 0.27))
     print("Reverse search:{}".format(reverse_search))
 
     #TODO list of files or file specified (mid november)
@@ -533,9 +535,17 @@ if __name__ == "__main__":
             print("only one file found, assuming full stack of observations")
             sst_ds = nc.Dataset(args.sst_location)
             sst_variable = [x for x in sst_ds.variables if args.sst_var in x.lower()][0]
+            sst_lon_var = [x for x in sst_ds.variables if "lon" in x.lower()][0]
+            sst_lat_var = [x for x in sst_ds.variables if "lat" in x.lower()][0]
+            sst_lons = sst_ds.variables[sst_lon_var][:]
+            sst_lats = sst_ds.variables[sst_lat_var][:]
             sst_array = sst_ds.variables[sst_variable][:]
             if args.extend_sst_data:
-                sst_array = extend_array(sst_array, args.date_seperation_per_year, args.first_date_index)
+                sst_array = extend_array(sst_array, date_seperation_per_year, args.first_date_index)
+            if args.reshape:
+                sst_array.shape = (sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])
+            if not (sst_array.shape[2] == sst_lats.shape[0] and sst_array.shape[3] == sst_lons.shape[0]):
+                sst_array.shape = (sst_array.shape[0], sst_array.shape[1], sst_array.shape[3], sst_array.shape[2])
             sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
             print("sst_shape: {}".format(sst_shape))
             print("sst_dtype: {}".format(sst_dtype))
@@ -552,9 +562,15 @@ if __name__ == "__main__":
         chl_lons = chl_ds.variables[chl_lon_var][:]
         chl_lats = chl_ds.variables[chl_lat_var][:]
         chl_array = chl_ds.variables[chl_variable][:]
+        if args.reshape:
+            chl_array.shape = (chl_array.shape[0], 1, chl_array.shape[1], chl_array.shape[2])
+
+        if not (chl_array.shape[2] == chl_lats.shape[0] and chl_array.shape[3] == chl_lons.shape[0]):
+            print("adjusting to flip lat and lon")
+            chl_array.shape = (chl_array.shape[0], chl_array.shape[1], chl_array.shape[3], chl_array.shape[2])
 
         if args.extend_chl_data:
-            chl_array = extend_array(chl_array, args.date_seperation_per_year, args.first_date_index)
+            chl_array = extend_array(chl_array, date_seperation_per_year, args.first_date_index)
 
         chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage)
         print("chl_shape: {}".format(chl_shape))
@@ -587,6 +603,6 @@ if __name__ == "__main__":
                                         chl_array, 
                                         sst_shape, 
                                         sst_dtype, 
-                                        date_seperation_per_year=int(args.date_seperation_per_year), 
+                                        date_seperation_per_year=date_seperation_per_year, 
                                         start_date=args.first_date_index, 
                                         reverse_search=reverse_search)

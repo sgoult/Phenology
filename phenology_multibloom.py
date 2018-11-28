@@ -418,8 +418,8 @@ def write_to_output_netcdf(data, total_blooms=None, probability=None):
     print(output_location)
     print("pre-writing data shape: {}".format(data.shape))
     print(data[:,:,:,0,0].shape)
-    ds.variables['TIME'][:] = range(0, data.shape[2] -1)
-    for year in range(0, data.shape[2] -1):
+    ds.variables['TIME'][:] = range(0, data.shape[2])
+    for year in range(0, data.shape[2]):
         ds.variables['date_start1'][year] = data[:,:,year,0,0]
         ds.variables['date_max1'][year] = data[:,:,year,0,3]
         ds.variables['date_end1'][year] = data[:,:,year,0,1]

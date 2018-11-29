@@ -289,8 +289,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
         possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
 
-        for hindex, high_bloom in enumerate(possible_low_blooms):
-            for lindex, low_bloom in enumerate(possible_high_blooms):
+        #filters out the blooms that might overlap
+        for hindex, high_bloom in enumerate(possible_high_blooms):
+            for lindex, low_bloom in enumerate(possible_low_blooms):
                 if any([low_bloom[x] == low_bloom[x] for x in [0, 1]]):
                     #whichever max is higher we should select
                     if low_bloom[4] > high_bloom[4]:

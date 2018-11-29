@@ -16,6 +16,57 @@ MEDIAN_THRESHOLD_DEFAULT = 5
 
 output_location = None
 
+"""
+Solar zenith stuff taken from jad
+"""
+def computeSunrise(jday, lat):
+    theta = (2 * pi * jday) / 365.
+    delta = 0.006918 - 0.399912 * cos(theta) + 0.070257 * sin(theta) - 0.006758 * cos(2. * theta) + 0.000907 * sin(
+        2. * theta) - 0.002697 * cos(3. * theta) + 0.001480 * sin(3. * theta)
+    phi = np.deg2rad(lat)
+    phidel = -tan(phi) * tan(delta)
+    if phidel < -1:
+        phidel = -1  # 24 hour sunlight
+    elif phidel > 1:
+        phidel = 1  # 24 hour darkness
+    return 12. - np.rad2deg(acos(phidel)) / 15., delta, phi
+
+
+# we use number of hours as 12 (noon)
+def genTimeArray(sunrise, num_hours):
+    times = np.zeros(num_hours)
+    delta_T = (12. - sunrise) / (num_hours)
+    for i in range(num_hours):
+        try:
+            times[i] = sunrise + delta_T*i
+        except ValueError:
+            print(sunrise)
+            print(delta_T)
+            print(i)
+    return times
+
+# use time for each element of the time array and the delta/phi are returned from computeSunrise()
+def computeZenith(local_time, delta, phi):
+    th = (local_time - 12) * (pi / 12)
+    zen = sin(delta) * sin(phi) + cos(delta) * cos(phi) * cos(th)
+    if zen < -1:
+        zen = -1.
+    elif zen > 1:
+        zen = 1.0
+    zen = (pi / 2.) - asin(zen)
+    return zen # radians
+
+def zenithreturn(jday, lat):
+    sunrise, delta, phi = computeSunrise(jday, lat)
+    times = genTimeArray(sunrise, 12)
+    zeniths = [math.degrees(computeZenith(time, delta, phi)) for time in times]
+    return sum(zeniths) / len(zeniths)
+"""
+End of solar zentih stuff
+"""
+
+
+
 def boxcar_smoothing(x, window):
    return x*window
 
@@ -145,7 +196,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             highs.append(index)
         elif array_like[forward_index] <= array_like[index] and array_like[backward_index] >= array_like[index]:
             lows.append(index)
-
+    
     #print(everything thus far
     if verbose:
         print("***********************")
@@ -240,6 +291,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             print("found ", len(possible_low_blooms), " lows")
 
         #reduce them to one record
+        #additionally look at using max vs duration for the bloom selection
         low = phen_records_to_one_val_on_max(possible_low_blooms, year)
         high = phen_records_to_one_val_on_max(possible_high_blooms, year)
         if not low or not high:
@@ -256,6 +308,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #alternative is (date_seperation_per_year // 0.630136986) to get in first 230 days but this seems wrong
         #we have all of the blooms in a year, could establish how many total bloom peaks over a year vs 2 blooms - is this necessarily much higher than
         ngd = len(possible_low_blooms) + len(possible_high_blooms)
+        #TODO reimplement this to reflect 1/2 bloom data - we can establish this over one year at a time
         """
         if low[3] or high[3]:
             if low[3]:
@@ -300,7 +353,7 @@ def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     sst_der_map[:] = sst_der[:]
     return sst_der.shape, sst_der.dtype
 
-def prepare_chl_variables(chl_array, numpy_storage, median_threshold=1.2):
+def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, do_model_med=False, median_threshold=1.2):
     """
     Creates the smoothed anomaly chlorophyll data, saves a file to the temporary directory that is read as a mem map later to conserve resources.
     """
@@ -308,11 +361,40 @@ def prepare_chl_variables(chl_array, numpy_storage, median_threshold=1.2):
     
     #! here i would prefer we output the media value (without adding 5% to it)
     
-    print("med5")
-    med5 = numpy.ma.median(chl_array,axis = 0)
-    print("median value: {}".format(med5))
-    print("median threshold: {}".format(median_threshold))
+    #TODO insert the solar zenith angle establishment, only if handed a modelled input (so add flag for --modelled-input)
+    if do_model_med:
+        days_per_ob = round(365 / date_seperation)
+        half_entry = days_per_ob / 2
+        ob_dates = [(d * days_per_ob) - half_entry for d in range(1,date_seperation+1)]
+        #use 70 degrees as cut off
+        date_masks = []
+        for d in ob_dates:
+            date_zeniths = []
+            for index, lat in enumerate(chl_lats):
+                zen = zenithreturn(d, lat)
+                if zen < 70:
+                    date_zeniths.append(0)
+                else:
+                    date_zeniths.append(1)
+            date_masks.append(date_zeniths)
+        
+        temp_chl_array = chl_array.copy()
+        for index, date_mask in enumerate(date_masks):
+            for row, row_mask in enumerate(date_mask):
+                if not row_mask:
+                    temp_chl_array.mask[index,0,row,:] = True
 
+        #TODO add gap filling, --gap-filling with a few choices for interpolation options, if not specified then don't do it at all
+
+        print("med5")
+        med5 = numpy.ma.median(temp_chl_array,axis = 0)
+        print("median value: {}".format(med5))
+        print("median threshold: {}".format(median_threshold))
+    else:
+        print("med5")
+        med5 = numpy.ma.median(chl_array,axis = 0)
+        print("median value: {}".format(med5))
+        print("median threshold: {}".format(median_threshold))
 
     #! after estimating the median, i apply a filling to the chl time-series, e.g., window of 8 time steps, but it would be good to be able to choose other width of the window, e.g., 5 time-steps or 3 time-steps...
 
@@ -384,7 +466,7 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.variables['DEPTH'][:] = [0.1]
     ds.createVariable('TIME', 'float32', dimensions=['TIME'])
     ds.variables['TIME'].setncattr("units", "years")
-    #switch back to LATITIUDE and LONGITUDE
+    #switch back to LATITIUDE and LONGITUDE, establish why the flipping of the axis makes everything go screwey
     ds.createVariable('date_start1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['date_start1'].setncattr("units", "weeks")
     ds.createVariable('date_max1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
@@ -522,13 +604,15 @@ if __name__ == "__main__":
     parser.add_argument("--intermediate_file_store", help="change where intermediate numpy files are placed, if not specified then /tmp is assumed - you should specify somewhere else if your tmp cannot handle the array sizes needed (and currently this program will fill it until it cannot).", required=False)
     parser.add_argument("--reverse_search", default=False, help="specify the number of observations to search in the previous year, if not specified will be calculated as a representation of 100 days (date_seperation_per_year / 0.27).", required=False)
     parser.add_argument("--skip_sst_prep", action="store_true", default=False, help="skip sst preparation, instead the program will assume that the sst input is already in a state where low/high period fluctuation can be identified", required=False)
-    parser.add_argument("--median_threshold", default=MEDIAN_THRESHOLD_DEFAULT, help="change median threshold", required=False)
+    parser.add_argument("--median_threshold", default=MEDIAN_THRESHOLD_DEFAULT, help="change median threshold, set as percentage value e.g. 20 = 20%", required=False)
+    parser.add_argument("--modelled_median", action='store_true',default=False, help="test for solar zenith of inputs", required=False)
     #probably needs a better description!
     #give options for both since we might end up in a situation where sst is 3 years and chl is one year (or vice versa)
     parser.add_argument("--extend_chl_data", default=False, action="store_true", help="extends chlorophyll by copying the (central) chl array to the year previous and year next")
     parser.add_argument("--extend_sst_data", default=False, action="store_true", help="extends sea surfaace temperature by copying the (central) chl array to the year previous and year next")
     parser.add_argument("--reshape", default=False, action="store_true", help="reshape to be t, 1, x, y")
     args = parser.parse_args()
+    med_thresh = 1+ (float(args.median_threshold) / 100)
     if not args.intermediate_file_store:
         numpy_storage = tempfile.mkdtemp(prefix="phenology_")
     else:
@@ -592,7 +676,7 @@ if __name__ == "__main__":
 
         start_date = args.first_date_index if not start_date else start_date
 
-        chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage)
+        chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage, date_seperation_per_year, chl_lats, do_model_med=args.modelled_median, median_threshold=med_thresh)
         print("chl_shape: {}".format(chl_shape))
         print("chl_dtype: {}".format(chl_dtype))
 

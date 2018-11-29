@@ -7,12 +7,15 @@ import shutil
 import tempfile
 import glob
 import sys
+import math
 
 #TODO Set dynamically from the input netcdf or user specified from command line
 FILL_VAL = -9.999999999999998e+33
 
 #TODO set this from the user inputs
-MEDIAN_THRESHOLD_DEFAULT = 5
+MEDIAN_THRESHOLD_DEFAULT = 20
+LAT_IDX = 2
+LON_IDX = 3
 
 output_location = None
 
@@ -20,21 +23,21 @@ output_location = None
 Solar zenith stuff taken from jad
 """
 def computeSunrise(jday, lat):
-    theta = (2 * pi * jday) / 365.
-    delta = 0.006918 - 0.399912 * cos(theta) + 0.070257 * sin(theta) - 0.006758 * cos(2. * theta) + 0.000907 * sin(
-        2. * theta) - 0.002697 * cos(3. * theta) + 0.001480 * sin(3. * theta)
-    phi = np.deg2rad(lat)
-    phidel = -tan(phi) * tan(delta)
+    theta = (2 * math.pi * jday) / 365.
+    delta = 0.006918 - 0.399912 * math.cos(theta) + 0.070257 * math.sin(theta) - 0.006758 * math.cos(2. * theta) + 0.000907 * math.sin(
+        2. * theta) - 0.002697 * math.cos(3. * theta) + 0.001480 * math.sin(3. * theta)
+    phi = numpy.deg2rad(lat)
+    phidel = -math.tan(phi) * math.tan(delta)
     if phidel < -1:
         phidel = -1  # 24 hour sunlight
     elif phidel > 1:
         phidel = 1  # 24 hour darkness
-    return 12. - np.rad2deg(acos(phidel)) / 15., delta, phi
+    return 12. - numpy.rad2deg(math.acos(phidel)) / 15., delta, phi
 
 
 # we use number of hours as 12 (noon)
 def genTimeArray(sunrise, num_hours):
-    times = np.zeros(num_hours)
+    times = numpy.zeros(num_hours)
     delta_T = (12. - sunrise) / (num_hours)
     for i in range(num_hours):
         try:
@@ -48,12 +51,12 @@ def genTimeArray(sunrise, num_hours):
 # use time for each element of the time array and the delta/phi are returned from computeSunrise()
 def computeZenith(local_time, delta, phi):
     th = (local_time - 12) * (pi / 12)
-    zen = sin(delta) * sin(phi) + cos(delta) * cos(phi) * cos(th)
+    zen = math.sin(delta) * math.sin(phi) + math.cos(delta) * math.cos(phi) * math.cos(th)
     if zen < -1:
         zen = -1.
     elif zen > 1:
         zen = 1.0
-    zen = (pi / 2.) - asin(zen)
+    zen = (math.pi / 2.) - math.asin(zen)
     return zen # radians
 
 def zenithreturn(jday, lat):

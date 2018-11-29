@@ -134,7 +134,7 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
            if verbose:
                print("chl values")
            max_idx = numpy.nanargmax(chl_values[start:end])
-           dates.append([start + date_offset,end + date_offset,end-start,max_idx + date_offset + start - 1,chl_values[max_idx + start -1]])
+           dates.append([start + date_offset,end + date_offset,end-start,max_idx + date_offset + start,chl_values[max_idx + start]])
            max_idx = None
         except StopIteration:
             continue
@@ -283,10 +283,21 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     #[start,end,end-start,max_idx,chl_values[max_idx]]
     blooms = []
     ngds = []
+
     for year in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year):
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
         possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
         possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
+
+        for hindex, high_bloom in enumerate(possible_low_blooms):
+            for lindex, low_bloom in enumerate(possible_high_blooms):
+                if any([low_bloom[x] == low_bloom[x] for x in [0, 1]]):
+                    #whichever max is higher we should select
+                    if low_bloom[4] > high_bloom[4]:
+                        possible_high_blooms.pop(hindex)
+                    else:
+                        possible_low_blooms.pop(lindex)
+                    
 
         if verbose:
             print(year)

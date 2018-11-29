@@ -50,7 +50,7 @@ def genTimeArray(sunrise, num_hours):
 
 # use time for each element of the time array and the delta/phi are returned from computeSunrise()
 def computeZenith(local_time, delta, phi):
-    th = (local_time - 12) * (pi / 12)
+    th = (local_time - 12) * (math.pi / 12)
     zen = math.sin(delta) * math.sin(phi) + math.cos(delta) * math.cos(phi) * math.cos(th)
     if zen < -1:
         zen = -1.

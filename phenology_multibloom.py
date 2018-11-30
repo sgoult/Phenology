@@ -404,13 +404,14 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
             date_masks.append(date_zeniths)
         
         temp_chl_array = chl_array.copy()
-        for index, date_mask in enumerate(date_masks):
-            for row, row_mask in enumerate(date_mask):
-                if not row_mask:
-                    if LAT_IDX == 2:
-                        temp_chl_array.mask[index,0,row,:] = True
-                    if LAT_IDX == 3:
-                        temp_chl_array.mask[index,0,:,row] = True
+        for year in range(0, date_seperation, chl_array.shape[0] + 1):
+            for index, date_mask in enumerate(date_masks):
+                for row, row_mask in enumerate(date_mask):
+                    if not row_mask:
+                        if LAT_IDX == 2:
+                            temp_chl_array.mask[year + index,0,row,:] = True
+                        if LAT_IDX == 3:
+                            temp_chl_array.mask[year + index,0,:,row] = True
 
         #TODO add gap filling, --gap-filling with a few choices for interpolation options, if not specified then don't do it at all
 

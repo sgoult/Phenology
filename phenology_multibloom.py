@@ -410,7 +410,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
                             temp_chl_array.mask[year + index,0,row,:] = True
                         if LAT_IDX == 3:
                             temp_chl_array.mask[year + index,0,:,row] = True
-                    ods.variables['zen'][year + index] = date_zeniths
+                    ods.variables['zen'][year + index] = true_zens[index]
         ods.close()
 
         #TODO add gap filling, --gap-filling with a few choices for interpolation options, if not specified then don't do it at all

@@ -321,9 +321,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #establish if the date is within the year - does this need to be tested for?
         #alternative is (date_seperation_per_year // 0.630136986) to get in first 230 days but this seems wrong
         #we have all of the blooms in a year, could establish how many total bloom peaks over a year vs 2 blooms - is this necessarily much higher than
-        ngd = len(possible_low_blooms) + len(possible_high_blooms)
         #TODO reimplement this to reflect 1/2 bloom data - we can establish this over one year at a time
-        """
+
         if low[3] or high[3]:
             if low[3]:
                 n1 = 1 if abs(low[3]) <= (date_seperation_per_year) else 0
@@ -333,13 +332,10 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
                 n2 = 1 if abs(high[3]) <= (date_seperation_per_year) else 0
             else:
                 n2 = 0
-            no1 = 1 if n1 == 1 and n2 != 1 else 0
-            no2 = 1 if n2 == 1 and n1 != 1 else 0
-            ngd = 2 if not no1 or no2 else no1 if no1 else no2
-            ngdp = 0
+
+            ngd = n1 + n2
         else:
-            ngd = None
-        """
+            ngd = 0
         ngds.append(ngd)
     return blooms, ngds
 

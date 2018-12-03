@@ -317,7 +317,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         if low[4] > high[4]:
             blooms.append([low,high])
         else:
-            blooms.append([high, low])
+            blooms.append([high,low])
         #establish if the date is within the year - does this need to be tested for?
         #alternative is (date_seperation_per_year // 0.630136986) to get in first 230 days but this seems wrong
         #we have all of the blooms in a year, could establish how many total bloom peaks over a year vs 2 blooms - is this necessarily much higher than
@@ -336,6 +336,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             ngd = n1 + n2
         else:
             ngd = 0
+        ngd = len(possible_high_blooms) + len(possible_high_blooms)
         ngds.append(ngd)
     return blooms, ngds
 
@@ -384,7 +385,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
             true_zen = []
             for index, lat in enumerate(chl_lats):
                 zen = zenithreturn(d, lat)
-                if zen < 70:
+                if zen <= 75:
                     date_zeniths.append(0)
                 else:
                     date_zeniths.append(1)

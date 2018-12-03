@@ -378,20 +378,23 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
         ob_dates = [(d * days_per_ob) - half_entry for d in range(1,date_seperation+1)]
         #use 70 degrees as cut off
         date_masks = []
+        true_zens = []
         for d in ob_dates:
             date_zeniths = []
+            true_zen = []
             for index, lat in enumerate(chl_lats):
                 zen = zenithreturn(d, lat)
                 if zen < 70:
                     date_zeniths.append(0)
                 else:
                     date_zeniths.append(1)
+                true_zen.append(zen)
             date_masks.append(date_zeniths)
         
         temp_chl_array = chl_array.copy()
         ods = nc.Dataset("lat_zen_angle.nc", "w")
         ods.createDimension('LATITUDE', chl_lats.shape[0])
-        ods.createDimension('TIME', len(range(0, date_seperation, chl_array.shape[0] + 1)))
+        ods.createDimension('TIME', chl_array.shape[0])
         ods.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
         ods.variables['LATITUDE'].setncattr("units", "degrees_north")
         ods.variables['LATITUDE'][:] = chl_lats
@@ -400,8 +403,8 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
         ods.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE'],fill_value=FILL_VAL)
         ods.variables['zen'].setncattr("units", "degrees")
         for year in range(0, date_seperation, chl_array.shape[0] + 1):
-            ods.variables['zen'][year] = date_masks
             for index, date_mask in enumerate(date_masks):
+                ods.variables['zen'][index] = date_zeniths
                 for row, row_mask in enumerate(date_mask):
                     if not row_mask:
                         if LAT_IDX == 2:

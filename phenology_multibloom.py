@@ -275,15 +275,25 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
         possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
 
+        high_removals = []
+        low_removals = []
         #filters out the blooms that might overlap
         for hindex, high_bloom in enumerate(possible_high_blooms):
+            append_high = True
             for lindex, low_bloom in enumerate(possible_low_blooms):
                 if any([low_bloom[x] == low_bloom[x] for x in [0, 1]]):
                     #whichever max is higher we should select
                     if low_bloom[4] > high_bloom[4]:
-                        possible_high_blooms.pop(hindex)
+                        high_removals.append(hindex)
                     else:
-                        possible_low_blooms.pop(lindex)
+                        low_removals.append(lindex)
+        
+        for idx in sorted(set(high_removals), reverse = True):
+            del possible_high_blooms[idx]
+        
+        for idx in sorted(set(low_removals), reverse = True):
+            del possible_low_blooms[idx]
+
                     
 
         if verbose:
@@ -380,10 +390,14 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
             date_masks.append(date_zeniths)
         
         temp_chl_array = chl_array.copy()
-        for index, date_mask in enumerate(date_masks):
-            for row, row_mask in enumerate(date_mask):
-                if not row_mask:
-                    temp_chl_array.mask[index,0,row,:] = True
+        for year in range(0, date_seperation, chl_array.shape[0] + 1):
+            for index, date_mask in enumerate(date_masks):
+                for row, row_mask in enumerate(date_mask):
+                    if not row_mask:
+                        if LAT_IDX == 2:
+                            temp_chl_array.mask[year + index,0,row,:] = True
+                        if LAT_IDX == 3:
+                            temp_chl_array.mask[year + index,0,:,row] = True
 
         #TODO add gap filling, --gap-filling with a few choices for interpolation options, if not specified then don't do it at all
 
@@ -468,27 +482,27 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.createVariable('TIME', 'float32', dimensions=['TIME'])
     ds.variables['TIME'].setncattr("units", "years")
     #switch back to LATITIUDE and LONGITUDE, establish why the flipping of the axis makes everything go screwey
-    ds.createVariable('date_start1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('date_start1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['date_start1'].setncattr("units", "weeks")
-    ds.createVariable('date_max1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('date_max1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['date_max1'].setncattr("units", "weeks")
-    ds.createVariable('date_end1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('date_end1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['date_end1'].setncattr("units", "weeks")
-    ds.createVariable('duration1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('duration1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['duration1'].setncattr("units", "weeks")
-    ds.createVariable('date_start2', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('date_start2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['date_start2'].setncattr("units", "weeks")
-    ds.createVariable('date_max2', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('date_max2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['date_max2'].setncattr("units", "weeks")
-    ds.createVariable('date_end2', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('date_end2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['date_end2'].setncattr("units", "weeks")
-    ds.createVariable('duration2', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('duration2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['duration2'].setncattr("units", "weeks")
-    ds.createVariable('max_val1', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
-    ds.createVariable('max_val2', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('max_val1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+    ds.createVariable('max_val2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['max_val2'].setncattr("units", "mgChl/m3")
     ds.variables['max_val1'].setncattr("units", "mgChl/m3")
-    ds.createVariable('total_blooms', 'float32', dimensions=['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('total_blooms', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['total_blooms'].setncattr("units", "observations")
     ds.createVariable('probability', 'float32', dimensions=['DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
     ds.variables['total_blooms'].setncattr("units", "likelihood")
@@ -659,6 +673,12 @@ if __name__ == "__main__":
         chl_lats = chl_ds.variables[chl_lat_var][:]
         print("lats shape",chl_lats.shape)
         print("lons shape",chl_lons.shape)
+        LAT_IDX = chl_ds.variables[chl_variable].dimensions.index(chl_lat_var)
+        LON_IDX = chl_ds.variables[chl_variable].dimensions.index(chl_lon_var)
+        if LAT_IDX > LON_IDX:
+            DIM_ORDER = ['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE']
+        else:
+            DIM_ORDER = ['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE']
         chl_array = chl_ds.variables[chl_variable][:]
         if args.reshape:
             chl_array.shape = (chl_array.shape[0], 1, chl_array.shape[1], chl_array.shape[2])

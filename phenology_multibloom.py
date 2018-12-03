@@ -396,7 +396,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
         ods = nc.Dataset("lat_zen_angle.nc", "w")
         ods.createDimension('LATITUDE', chl_lats.shape[0])
         ods.createDimension('LONGITUDE', chl_lons.shape[0])
-        ods.createDimension('TIME', (date_seperation,))
+        ods.createDimension('TIME', date_seperation)
         ods.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
         ods.variables['LATITUDE'].setncattr("units", "degrees_north")
         ods.variables['LATITUDE'][:] = chl_lats

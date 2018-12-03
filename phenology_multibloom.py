@@ -314,7 +314,10 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             print(possible_low_blooms)
             print(low, high)
         #spit out the low period and high period for this year
-        blooms.append([low,high])
+        if low[4] > high[4]:
+            blooms.append([low,high])
+        else:
+            blooms.append([high, low])
         #establish if the date is within the year - does this need to be tested for?
         #alternative is (date_seperation_per_year // 0.630136986) to get in first 230 days but this seems wrong
         #we have all of the blooms in a year, could establish how many total bloom peaks over a year vs 2 blooms - is this necessarily much higher than
@@ -390,7 +393,18 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
             date_masks.append(date_zeniths)
         
         temp_chl_array = chl_array.copy()
+        ods = nc.Dataset("lat_zen_angle.nc")
+        ods.createDimension('LATITUDE', chl_lats.shape[0])
+        ods.createDimension('TIME', len(range(0, date_seperation, chl_array.shape[0] + 1)))
+        ods.variables['LATITUDE'].setncattr("units", "degrees_north")
+        ods.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
+        ods.variables['LATITUDE'][:] = chl_lats
+        ods.createVariable('TIME', 'float32', dimensions=['TIME'])
+        ods.variables['TIME'].setncattr("units", "years")
+        ods.createVariable('zen', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+        ods.variables['zen'].setncattr("units", "degrees")
         for year in range(0, date_seperation, chl_array.shape[0] + 1):
+            ods.variables['zen'][year] = date_masks
             for index, date_mask in enumerate(date_masks):
                 for row, row_mask in enumerate(date_mask):
                     if not row_mask:
@@ -398,6 +412,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
                             temp_chl_array.mask[year + index,0,row,:] = True
                         if LAT_IDX == 3:
                             temp_chl_array.mask[year + index,0,:,row] = True
+        ods.close()
 
         #TODO add gap filling, --gap-filling with a few choices for interpolation options, if not specified then don't do it at all
 

@@ -396,7 +396,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
         ods = nc.Dataset("lat_zen_angle.nc", "w")
         ods.createDimension('LATITUDE', chl_lats.shape[0])
         ods.createDimension('LONGITUDE', chl_lons.shape[0])
-        ods.createDimension('TIME', chl_array.shape[0])
+        ods.createDimension('TIME', (date_seperation,))
         ods.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
         ods.variables['LATITUDE'].setncattr("units", "degrees_north")
         ods.variables['LATITUDE'][:] = chl_lats
@@ -417,7 +417,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
                             temp_chl_array.mask[year + index,0,row,:] = True
                         if LAT_IDX == 3:
                             temp_chl_array.mask[year + index,0,:,row] = True
-                    ods.variables['zen'][year + index,row,:] = true_zens[index,row]
+                ods.variables['zen'][index,row,:] = true_zens[index][row]
         ods.close()
 
         #TODO add gap filling, --gap-filling with a few choices for interpolation options, if not specified then don't do it at all

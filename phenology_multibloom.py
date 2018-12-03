@@ -281,7 +281,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         for hindex, high_bloom in enumerate(possible_high_blooms):
             append_high = True
             for lindex, low_bloom in enumerate(possible_low_blooms):
-                if any([low_bloom[x] == low_bloom[x] for x in [0, 1]]):
+                if any([low_bloom[x] == high_bloom[x] for x in [0, 1]]):
                     #whichever max is higher we should select
                     if low_bloom[4] > high_bloom[4]:
                         high_removals.append(hindex)
@@ -547,12 +547,12 @@ def write_to_output_netcdf(data, total_blooms=None, probability=None):
         ds.variables['date_max1'][year] = data[:,:,year,0,3]
         ds.variables['date_end1'][year] = data[:,:,year,0,1]
         ds.variables['duration1'][year] = data[:,:,year,0,2]
+        ds.variables['max_val1'][year] = data[:,:,year,0,4]
         print(data[:,:,year,1,0])
         ds.variables['date_start2'][year] = data[:,:,year,1,0]
         ds.variables['date_max2'][year] = data[:,:,year,1,3]
         ds.variables['date_end2'][year] = data[:,:,year,1,1]
         ds.variables['duration2'][year] = data[:,:,year,1,2]
-        ds.variables['max_val1'][year] = data[:,:,year,0,4]
         ds.variables['max_val2'][year] = data[:,:,year,1,4]
         if total_blooms is not None:
             ds.variables['total_blooms'][year] = total_blooms[:,:,year]

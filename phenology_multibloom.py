@@ -34,20 +34,6 @@ def computeSunrise(jday, lat):
         phidel = 1  # 24 hour darkness
     return 12. - numpy.rad2deg(math.acos(phidel)) / 15., delta, phi
 
-
-# we use number of hours as 12 (noon)
-def genTimeArray(sunrise, num_hours):
-    times = numpy.zeros(num_hours)
-    delta_T = (12. - sunrise) / (num_hours)
-    for i in range(num_hours):
-        try:
-            times[i] = sunrise + delta_T*i
-        except ValueError:
-            print(sunrise)
-            print(delta_T)
-            print(i)
-    return times
-
 # use time for each element of the time array and the delta/phi are returned from computeSunrise()
 def computeZenith(local_time, delta, phi):
     th = (local_time - 12) * (math.pi / 12)
@@ -61,8 +47,8 @@ def computeZenith(local_time, delta, phi):
 
 def zenithreturn(jday, lat):
     sunrise, delta, phi = computeSunrise(jday, lat)
-    times = genTimeArray(sunrise, 12)
-    zeniths = [math.degrees(computeZenith(time, delta, phi)) for time in times]
+    #change to 11.5 or 12
+    zeniths = [math.degrees(computeZenith(time, delta, phi)) for time in [11, 11.5, 12]]
     return sum(zeniths) / len(zeniths)
 """
 End of solar zentih stuff

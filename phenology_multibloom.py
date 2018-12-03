@@ -389,6 +389,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
                 else:
                     date_zeniths.append(1)
                 true_zen.append(zen)
+            true_zens.append(true_zen)
             date_masks.append(date_zeniths)
         
         temp_chl_array = chl_array.copy()

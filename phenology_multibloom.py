@@ -363,7 +363,7 @@ def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     sst_der_map[:] = sst_der[:]
     return sst_der.shape, sst_der.dtype
 
-def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, do_model_med=False, median_threshold=1.2):
+def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, chl_lons, do_model_med=False, median_threshold=1.2):
     """
     Creates the smoothed anomaly chlorophyll data, saves a file to the temporary directory that is read as a mem map later to conserve resources.
     """
@@ -395,13 +395,19 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
         temp_chl_array = chl_array.copy()
         ods = nc.Dataset("lat_zen_angle.nc", "w")
         ods.createDimension('LATITUDE', chl_lats.shape[0])
+        ods.createDimension('LONGITUDE', chl_lons.shape[0])
         ods.createDimension('TIME', chl_array.shape[0])
         ods.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
         ods.variables['LATITUDE'].setncattr("units", "degrees_north")
         ods.variables['LATITUDE'][:] = chl_lats
+
+        ods.createVariable('LONGITUDE', 'float64', dimensions=['LONGITUDE'])
+        ods.variables['LONGITUDE'].setncattr("units", "degrees_north")
+        ods.variables['LONGITUDE'][:] = chl_lons
+
         ods.createVariable('TIME', 'float32', dimensions=['TIME'])
         ods.variables['TIME'].setncattr("units", "years")
-        ods.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE'],fill_value=FILL_VAL)
+        ods.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
         ods.variables['zen'].setncattr("units", "degrees")
         for year in range(0, date_seperation, chl_array.shape[0] + 1):
             for index, date_mask in enumerate(date_masks):
@@ -411,7 +417,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
                             temp_chl_array.mask[year + index,0,row,:] = True
                         if LAT_IDX == 3:
                             temp_chl_array.mask[year + index,0,:,row] = True
-                    ods.variables['zen'][year + index] = true_zens[index]
+                    ods.variables['zen'][year + index,row,:] = true_zens[index,row]
         ods.close()
 
         #TODO add gap filling, --gap-filling with a few choices for interpolation options, if not specified then don't do it at all
@@ -712,7 +718,7 @@ if __name__ == "__main__":
 
         start_date = args.first_date_index if not start_date else start_date
 
-        chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage, date_seperation_per_year, chl_lats, do_model_med=args.modelled_median, median_threshold=med_thresh)
+        chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage, date_seperation_per_year, chl_lats, chl_lons, do_model_med=args.modelled_median, median_threshold=med_thresh)
         print("chl_shape: {}".format(chl_shape))
         print("chl_dtype: {}".format(chl_dtype))
 

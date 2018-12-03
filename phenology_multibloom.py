@@ -389,15 +389,15 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
             date_masks.append(date_zeniths)
         
         temp_chl_array = chl_array.copy()
-        ods = nc.Dataset("lat_zen_angle.nc")
+        ods = nc.Dataset("lat_zen_angle.nc", "w")
         ods.createDimension('LATITUDE', chl_lats.shape[0])
         ods.createDimension('TIME', len(range(0, date_seperation, chl_array.shape[0] + 1)))
-        ods.variables['LATITUDE'].setncattr("units", "degrees_north")
         ods.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
+        ods.variables['LATITUDE'].setncattr("units", "degrees_north")
         ods.variables['LATITUDE'][:] = chl_lats
         ods.createVariable('TIME', 'float32', dimensions=['TIME'])
         ods.variables['TIME'].setncattr("units", "years")
-        ods.createVariable('zen', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+        ods.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE'],fill_value=FILL_VAL)
         ods.variables['zen'].setncattr("units", "degrees")
         for year in range(0, date_seperation, chl_array.shape[0] + 1):
             ods.variables['zen'][year] = date_masks

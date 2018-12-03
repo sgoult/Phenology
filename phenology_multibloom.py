@@ -269,6 +269,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     #[start,end,end-start,max_idx,chl_values[max_idx]]
     blooms = []
     ngds = []
+    total_blooms = []
 
     for year in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year):
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
@@ -314,7 +315,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             print(possible_low_blooms)
             print(low, high)
         #spit out the low period and high period for this year
-        if low[4] > high[4]:
+        if low[3] > high[3]:
             blooms.append([low,high])
         else:
             blooms.append([high,low])
@@ -336,8 +337,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             ngd = n1 + n2
         else:
             ngd = 0
-        ngd = len(possible_high_blooms) + len(possible_high_blooms)
         ngds.append(ngd)
+        total_blooms.append(len(possible_high_blooms) + len(possible_low_blooms))
     return blooms, ngds
 
 def prepare_sst_variables(sst_array, numpy_storage, skip=False):
@@ -377,7 +378,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
         days_per_ob = round(365 / date_seperation)
         half_entry = days_per_ob / 2
         ob_dates = [(d * days_per_ob) - half_entry for d in range(1,date_seperation+1)]
-        #use 70 degrees as cut off
+        #use 75 degrees as cut off
         date_masks = []
         true_zens = []
         for d in ob_dates:

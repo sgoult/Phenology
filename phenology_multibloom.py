@@ -404,13 +404,13 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, d
         ods.variables['zen'].setncattr("units", "degrees")
         for year in range(0, date_seperation, chl_array.shape[0] + 1):
             for index, date_mask in enumerate(date_masks):
-                ods.variables['zen'][index] = date_zeniths
                 for row, row_mask in enumerate(date_mask):
                     if not row_mask:
                         if LAT_IDX == 2:
                             temp_chl_array.mask[year + index,0,row,:] = True
                         if LAT_IDX == 3:
                             temp_chl_array.mask[year + index,0,:,row] = True
+                    ods.variables['zen'][year + index] = date_zeniths
         ods.close()
 
         #TODO add gap filling, --gap-filling with a few choices for interpolation options, if not specified then don't do it at all

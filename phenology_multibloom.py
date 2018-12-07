@@ -8,6 +8,8 @@ import tempfile
 import glob
 import sys
 import math
+import tqdm
+from fast_polarity.polarity import polarity_edge_finder_optimised as polaritiser
 
 #TODO Set dynamically from the input netcdf or user specified from command line
 FILL_VAL = -9.999999999999998e+33
@@ -82,7 +84,7 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
     #if it's all gone horribly wrong then this will quit out of it straight away
     if len(array_like):
         #this is 38.9% of time spent in this function
-        zero_crossings = numpy.where(numpy.diff(numpy.sign(array_like)))[0]
+        zero_crossings = numpy.where(polaritiser(array_like.astype(numpy.float)))[0]
     else:
         zero_crossings = []
     true_poss = zero_crossings
@@ -97,17 +99,12 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
     starts = []
     ends = []
     #works much the same qas the SST one below
-    for index in true_poss:
-        forward_index = index + 1 if not (index + 1) >= (len(array_like)) else index
-        backward_index =  index - 1 if not (index - 1) < 0 else index
-        #20% of time in function
-        if array_like[forward_index] >= array_like[index] and array_like[backward_index] <= array_like[index]:
-            starts.append(index)
-        #20% of time in function
-        elif array_like[forward_index] <= array_like[index] and array_like[backward_index] >= array_like[index]:
-            ends.append(index)
+    starts = [x for x in zero_crossings if array_like[x] < 0]
+    ends = [x for x in zero_crossings if array_like[x] > 0]
     #we know the last entry will be an end
-    ends.append(len(array_like))
+    if starts and ends:
+        if starts[-1] > ends[-1]:
+            ends.append(len(array_like))
     if verbose:
         print("starts and ends")
         print(starts)
@@ -155,6 +152,9 @@ def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
     else:
         return [None,None,None,None,None]
 
+def polarity_edge_finder(input_array):
+    return (numpy.diff(numpy.sign(input_array)) != 0)*1
+
 def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_seperation_per_year, reverse_search, start_date=0, verbose=False):
     """
     Attributes the start and end times in relation to the SST or solar cycle, takes an sst array (array_like), smoothed chlorophyll derivative slice (chl_sbx_slice) and the original chlorophyll data.
@@ -164,27 +164,31 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
     in a run using global data that too 30 minutes, this function made up 703 seconds of the processing time
     I would guess that 500 of those seconds can be attributed to get_start_index_and_duration
-    """
-    
+    """ 
+    if array_like.mask.all():
+        if verbose:
+            print("array all -32616.30273438")
+            print(array_like)
+        #we can stop here, there's not point continuing with an empty array
+        return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year) if not x + date_seperation_per_year > chl_sbx_slice.shape[0]]
+
     #possibly resort and create new durations based on remaining dates
     #look for sign changes in sst or PAR data, indicating high/low SST or light periods
     array_like = numpy.squeeze(array_like)
     chl_slice = numpy.squeeze(chl_slice)
     chl_sbx_slice = numpy.squeeze(chl_sbx_slice)
-    zero_crossings = numpy.where(numpy.diff(numpy.sign(array_like)))[0]
+    zero_crossings = numpy.where(polaritiser(array_like.astype(numpy.float)))[0]
+
+    if verbose:
+        print("array like and zero crossings")
+        print(array_like)
+        print(zero_crossings)
 
     #find out which way we're going
     highs = []
     lows = []
-    for index in zero_crossings:
-        #checks if the values are increasing or decreasing
-        forward_index = index + 1 if not (index + 1) > (len(array_like) + 1) else index
-        backward_index =  index - 1 if not (index - 1) < 0 else index
-        #add to high period or low periods
-        if array_like[forward_index] >= array_like[index] and array_like[backward_index] <= array_like[index]:
-            highs.append(index)
-        elif array_like[forward_index] <= array_like[index] and array_like[backward_index] >= array_like[index]:
-            lows.append(index)
+    highs = [x for x in zero_crossings if array_like[x] < 0]
+    lows = [x for x in zero_crossings if array_like[x] > 0]
     
     #print(everything thus far
     if verbose:
@@ -193,7 +197,6 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         print(highs)
         print(lows)
     maximum_sst = []
-    max_yr_idx = len(array_like)
     activity_period = None
     try:
         """
@@ -207,7 +210,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
                     highs = [0] + highs
                 else:
                     lows = [0] + lows
-            if highs[-1] > lows[-1]:
+            if highs[-1] < lows[-1]:
                 highs.append(len(array_like))
             else:
                 lows.append(len(array_like))
@@ -216,7 +219,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         elif len(lows) and not len(highs):
             highs = [0, len(array_like)]
         else:
-            return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year)]
+            return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year) if not x + date_seperation_per_year > chl_sbx_slice.shape[0]]
     except Exception as e:
         #triggered once, but was helpful to know what the contents were
         print(highs)
@@ -251,8 +254,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         pad = int(round((end_date - index) * 0.20))
         end_date = int(round(end_date + pad))
         start = index - pad if index >= pad else index
-        chl_sbx_period_slice = chl_sbx_slice[start:end_date].flatten()
-        chl_period_slice = chl_slice[start:end_date].flatten()
+        chl_sbx_period_slice = chl_sbx_slice[start:end_date]
+        chl_period_slice = chl_slice[start:end_date]
         #get the phenology for this period, depth pads extra data if needed for numpy (we don't use this for SST model)
         #73% of time in function
         period_chl_phenology = get_start_index_and_duration(chl_sbx_period_slice,chl_period_slice,start,depth=5,verbose=verbose)
@@ -270,15 +273,17 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     blooms = []
     ngds = []
     total_blooms = []
-
     for year in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year):
+        if year + date_seperation_per_year > chl_sbx_slice.shape[0]:
+            continue
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
         possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
         possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
 
+        #filters out the blooms that might overlap
         high_removals = []
         low_removals = []
-        #filters out the blooms that might overlap
+         #filters out the blooms that might overlap
         for hindex, high_bloom in enumerate(possible_high_blooms):
             append_high = True
             for lindex, low_bloom in enumerate(possible_low_blooms):
@@ -295,17 +300,23 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         for idx in sorted(set(low_removals), reverse = True):
             del possible_low_blooms[idx]
 
-                    
+        high_blooms = possible_high_blooms    
+        low_blooms = possible_low_blooms
 
         if verbose:
             print(year)
             print("found ", len(possible_high_blooms), " highs")
             print("found ", len(possible_low_blooms), " lows")
-
+        
+        if verbose:
+            print("highs")
+            print(high_blooms)
+            print("lows")
+            print(low_blooms)
         #reduce them to one record
         #additionally look at using max vs duration for the bloom selection
-        low = phen_records_to_one_val_on_max(possible_low_blooms, year)
-        high = phen_records_to_one_val_on_max(possible_high_blooms, year)
+        low = phen_records_to_one_val_on_max(low_blooms, year)
+        high = phen_records_to_one_val_on_max(high_blooms, year)
         if not low or not high:
             print("***************")
             print(high_records)
@@ -315,7 +326,15 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             print(possible_low_blooms)
             print(low, high)
         #spit out the low period and high period for this year
-        if low[3] > high[3]:
+        #
+        if verbose:
+            print("high bloom")
+            print(high)
+            print("low bloom")
+            print(low)
+        high_val = high[3] if high[3] else -1000
+        low_val = low[3] if low[3] else -1000
+        if low_val > high_val:
             blooms.append([low,high])
         else:
             blooms.append([high,low])
@@ -339,7 +358,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             ngd = 0
         ngds.append(ngd)
         total_blooms.append(len(possible_high_blooms) + len(possible_low_blooms))
-    return blooms, ngds
+    return blooms, ngds, total_blooms
 
 def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     """
@@ -350,7 +369,7 @@ def prepare_sst_variables(sst_array, numpy_storage, skip=False):
         sst_boxcar = numpy.apply_along_axis(numpy.convolve, 0, sst_array, numpy.ones((8,))/8, mode='valid')
         fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])), mask=numpy.ones((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])))
         sst_boxcar = numpy.concatenate([fill_arr, fill_arr, fill_arr, sst_boxcar, fill_arr, fill_arr, fill_arr, fill_arr])
-        sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=sst_boxcar.dtype)
+        sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype='float64')
         sst_boxcar_map[:] = sst_boxcar[:]
         sst_boxcar = None
         sst_boxcar = sst_boxcar_map
@@ -361,9 +380,11 @@ def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     else:
         print("Skipped sst data preparation")
         sst_der = sst_array
-    sst_der_map = numpy.memmap(os.path.join(numpy_storage, "sst_der"), mode="w+", shape=sst_der.shape, dtype=sst_der.dtype)
+        numpy.ma.set_fill_value(sst_array, fill_value=FILL_VAL)
+        print(sst_array.shape)
+    sst_der_map = numpy.memmap(os.path.join(numpy_storage, "sst_der"), mode="w+", shape=sst_der.shape, dtype='float64')
     sst_der_map[:] = sst_der[:]
-    return sst_der.shape, sst_der.dtype
+    return sst_der.shape, 'float64'
 
 def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, chl_lons, do_model_med=False, median_threshold=1.2):
     """
@@ -434,6 +455,24 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
         print("median value: {}".format(med5))
         print("median threshold: {}".format(median_threshold))
 
+    ods = nc.Dataset("median_output.nc", "w")
+    ods.createDimension('LATITUDE', chl_lats.shape[0])
+    ods.createDimension('LONGITUDE', chl_lons.shape[0])
+    ods.createDimension('TIME', 1)
+    ods.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
+    ods.variables['LATITUDE'].setncattr("units", "degrees_north")
+    ods.variables['LATITUDE'][:] = chl_lats
+
+    ods.createVariable('LONGITUDE', 'float64', dimensions=['LONGITUDE'])
+    ods.variables['LONGITUDE'].setncattr("units", "degrees_north")
+    ods.variables['LONGITUDE'][:] = chl_lons
+
+    ods.createVariable('TIME', 'float32', dimensions=['TIME'])
+    ods.variables['TIME'].setncattr("units", "years")
+    ods.createVariable('median', 'float32', dimensions=['TIME', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ods.variables['median'].setncattr("units", "mg chl m^3")
+    ods.variables['median'][:] = med5
+
     #! after estimating the median, i apply a filling to the chl time-series, e.g., window of 8 time steps, but it would be good to be able to choose other width of the window, e.g., 5 time-steps or 3 time-steps...
 
     #! here it would be good to give the option to select the value of the median threshold, e.g., median plus 5%, 10%, 15%...
@@ -443,7 +482,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     anomaly = chl_array - (med5*median_threshold)
     anomaly_map = numpy.memmap(os.path.join(numpy_storage, "chl_anomaly"), mode="w+", shape=anomaly.shape, dtype=anomaly.dtype)
     anomaly_map[:] = anomaly[:]
-    anomaly = anomaly_map
+    #anomaly = anomaly_map
     chl_array = None
     anomaly_map = None
     #need to ditch any empty entries here as they interefere with the cumsum
@@ -453,7 +492,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     chl_cumsum = numpy.ma.cumsum(anomaly,axis=1)
     chl_cumsum_map = numpy.memmap(os.path.join(numpy_storage, "chl_cumsum"), mode="w+", shape=chl_cumsum.shape, dtype=chl_cumsum.dtype)
     chl_cumsum_map[:] = chl_cumsum[:]
-    chl_cumsum = chl_cumsum_map
+    #chl_cumsum = chl_cumsum_map
     anomaly = None
     chl_cumsum_map = None
 
@@ -527,7 +566,7 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.variables['max_val1'].setncattr("units", "mgChl/m3")
     ds.createVariable('total_blooms', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['total_blooms'].setncattr("units", "observations")
-    ds.createVariable('probability', 'float32', dimensions=['DEPTH', 'LONGITUDE', 'LATITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('probability', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL)
     ds.variables['total_blooms'].setncattr("units", "likelihood")
     ds.close()
     print("created netcdf {}".format(name))
@@ -570,7 +609,10 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     #this all works on the assumption the axis 0 is time
     print("reading variables")
     chl_boxcar = numpy.memmap(os.path.join(numpy_storage, "chl_sbx"), mode="r", dtype=chl_dtype, shape=chl_shape)
+    chl_boxcar = chl_boxcar.copy()
+    print(sst_dtype)
     sst_der = numpy.memmap(os.path.join(numpy_storage, "sst_der"), mode="r", dtype=sst_dtype, shape=sst_shape)
+    sst_der = sst_der.copy()
     print("shapes after reading sst: {} chl: {}".format(chl_boxcar.shape, sst_der.shape))
     print("reshaping to sst: {} chl: {}".format(sst_shape, chl_shape))
     sst_der.shape = sst_shape
@@ -589,10 +631,13 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     total_blooms.fill(FILL_VAL)
     completion_points = range(0, chl_data.shape[2], chl_data.shape[2] // 10)
     print("doing sst initiations and correction")
-    for ix, iy in numpy.ndindex(chl_data.shape[2], chl_data.shape[3]):
+    for ix, iy in tqdm.tqdm(numpy.ndindex(chl_data.shape[2], chl_data.shape[3]), total=(chl_data.shape[2] * chl_data.shape[3])):
         try:
             verbose=False
-            results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date)
+            if iy == 0 and ix == 13:
+                print(ix,iy)
+                verbose = True
+            results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=verbose, start_date=start_date)
             year_true_start_end_array[ix,iy] = results[0]
             total_blooms[ix,iy] = results[1]
             if verbose:
@@ -603,8 +648,10 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
             print(repr(e))
             print(match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date))
             print()
+        """
         if ix in completion_points and iy == 0:
             print(completion_points.index(ix) * 10, "% complete")
+        """
     
     probability_array = numpy.apply_along_axis(total_blooms_to_probability, 2, total_blooms)
 
@@ -676,7 +723,7 @@ if __name__ == "__main__":
             sst_lats = sst_ds.variables[sst_lat_var][:]
             sst_array = sst_ds.variables[sst_variable][:]
             if args.extend_sst_data:
-                sst_array, _ = extend_array(sst_array, date_seperation_per_year, args.first_date_index)
+                sst_array, _ = extend_array(sst_array, date_seperation_per_year, start_date)
             if args.reshape:
                 sst_array.shape = (sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])
             sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
@@ -715,10 +762,10 @@ if __name__ == "__main__":
             chl_array.shape = (chl_array.shape[0], chl_array.shape[1], chl_array.shape[3], chl_array.shape[2])
         """
         start_date = None
+        start_date = int(args.first_date_index) if not start_date else start_date
         if args.extend_chl_data:
-            chl_array, start_date = extend_array(chl_array, date_seperation_per_year, args.first_date_index)
+            chl_array, start_date = extend_array(chl_array, date_seperation_per_year, start_date)
 
-        start_date = args.first_date_index if not start_date else start_date
 
         chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage, date_seperation_per_year, chl_lats, chl_lons, do_model_med=args.modelled_median, median_threshold=med_thresh)
         print("chl_shape: {}".format(chl_shape))
@@ -732,8 +779,6 @@ if __name__ == "__main__":
             sys.exit()
 
         #TODO set dynamically
-        sst_dtype = 'float64'
-        chl_dtype = 'float64'
 
         if args.output:
             output = args.output
@@ -744,7 +789,7 @@ if __name__ == "__main__":
         #simple regridding
         print(chl_shape)
         create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output)
-
+        print("using start date",start_date)
         get_multi_year_two_blooms_output(numpy_storage,
                                         chl_shape,
                                         chl_dtype, 

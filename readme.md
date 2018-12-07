@@ -11,8 +11,20 @@ conda create --name phenology_env python=3 anaconda
 
 conda install --name phenology_env numpy=1.15.4 netCDF4=1.4.2
 
+once checked out and installed you need to cd into the directory of this repo and run
+
+`python3 setup.py build_ext --inplace`
+
+this will compile the c module for use with python3, if you are using python 2 use:
+
+`python2 setup.py build_ext --inplace`
+
 Example usage:
 `python3 phenology_multibloom.py --sst_location sstder_98_06_global_nofixval_newg.nc chl_5day_MIT_global_98_06.nc --date_seperation_per_year=73`
+
+for use with a pre prepared sst derivitive file and modelled chlorophyll input use:
+
+`python phenology_multibloom.py --sst_location sstder_98_06_global_nofixval.nc fill_chlfillh2_nofixval_OCCCI_NOBM_5d_98_06_newg.nc --date_seperation_per_year 73 --skip_sst_prep --modelled_median --first_date_index 37`
 
 This will produce a file named chl_5day_MIT_global_98_06_phenology.nc, using the two bloom method with time slices matched to every 73 entries (5 day composites).
 

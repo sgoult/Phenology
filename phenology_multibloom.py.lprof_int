@@ -1,0 +1,247 @@
+Timer unit: 1e-06 s
+
+Total time: 36.8809 s
+File: phenology_multibloom.py
+Function: get_start_index_and_duration at line 30
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+    30                                           @profile
+    31                                           def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_values=False, verbose=False):
+    32                                               """
+    33                                               takes a list of values and searches for the max, then the associated sign changes to indicate bloom start/end
+    34                                               set depth to change limit of number of identifications
+    35                                               
+    36                                           !comment[A] my approach was to save the  max Chl value found between each of the start and end time, and also the duration, i.e., estimated as number of steps between start and end times
+    37                                           ! with the first derivative light availability or SST is increasing when PAR or SST first derivative is positive, and vice versa
+    38                                            
+    39                                               in a run using global data that took 30 minutes, this function made up 513 seconds of the processing time
+    40                                               """
+    41                                               #array_like = numpy.squeeze(array_like)
+    42                                               #if it's all gone horribly wrong then this will quit out of it straight away
+    43     50649      47337.0      0.9      0.1      if len(array_like):
+    44     50649   14356168.0    283.4     38.9          zero_crossings = numpy.where(numpy.diff(numpy.sign(array_like)))[0]
+    45                                               else:
+    46                                                   zero_crossings = []
+    47     50649      50361.0      1.0      0.1      true_poss = zero_crossings
+    48                                           
+    49                                           
+    50     50649      30956.0      0.6      0.1      if verbose:
+    51                                                   print("zero crossings")
+    52                                                   print(zero_crossings)
+    53                                                   print("chl sbx")
+    54                                                   print(array_like)
+    55                                               #find out which way we're going
+    56     50649      32919.0      0.6      0.1      starts = []
+    57     50649      29919.0      0.6      0.1      ends = []
+    58                                               #works much the same qas the SST one below
+    59    284300     322947.0      1.1      0.9      for index in true_poss:
+    60    233651     372875.0      1.6      1.0          forward_index = index + 1 if not (index + 1) >= (len(array_like)) else index
+    61    233651     283893.0      1.2      0.8          backward_index =  index - 1 if not (index - 1) < 0 else index
+    62    233651   10455350.0     44.7     28.3          if array_like[forward_index] >= array_like[index] and array_like[backward_index] <= array_like[index]:
+    63     68627      64776.0      0.9      0.2              starts.append(index)
+    64    165024    8077513.0     48.9     21.9          elif array_like[forward_index] <= array_like[index] and array_like[backward_index] >= array_like[index]:
+    65     66978      64444.0      1.0      0.2              ends.append(index)
+    66                                               #we know the last entry will be an end
+    67     50649      48732.0      1.0      0.1      ends.append(len(array_like))
+    68     50649      31680.0      0.6      0.1      if verbose:
+    69                                                   print("starts and ends")
+    70                                                   print(starts)
+    71                                                   print(ends)
+    72                                               #find an end for every start
+    73     50649      34816.0      0.7      0.1      dates = []
+    74    119276     101600.0      0.9      0.3      for start in starts:
+    75     68627      41765.0      0.6      0.1          try:
+    76     68627     235083.0      3.4      0.6             end = next(x for x in ends if x > start)
+    77     68627      43834.0      0.6      0.1             if verbose:
+    78                                                          print("chl values")
+    79                                                          print(chl_values[start:end])
+    80     68627    1892324.0     27.6      5.1             max_idx = numpy.nanargmax(chl_values[start:end]) + start
+    81     68627     168063.0      2.4      0.5             dates.append([start + date_offset,end + date_offset,end-start,max_idx,chl_values[max_idx]])
+    82                                                   except StopIteration:
+    83                                                       continue
+    84                                                   except Exception as e:
+    85                                                      print(e)
+    86                                                      print(repr(e))
+    87                                                      continue
+    88     50649      33028.0      0.7      0.1      if pad_values:
+    89                                                   for pad in range(len(dates), depth):
+    90                                                       dates.append([None,None,None,None,None])
+    91     50649      32271.0      0.6      0.1      if verbose:
+    92                                                   print("end dates")
+    93                                                   print(dates)
+    94     50649      28221.0      0.6      0.1      return dates
+
+Total time: 52.709 s
+File: phenology_multibloom.py
+Function: match_start_end_to_solar_cycle at line 115
+
+Line #      Hits         Time  Per Hit   % Time  Line Contents
+==============================================================
+   115                                           @profile
+   116                                           def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_seperation_per_year, reverse_search, start_date=0, verbose=False):
+   117                                               """
+   118                                               Attributes the start and end times in relation to the SST or solar cycle, takes an sst array (array_like), smoothed chlorophyll derivative slice (chl_sbx_slice) and the original chlorophyll data.
+   119                                           
+   120                                               Slices up the data based on high/low periods of SST (or otherwise), then feeds each period into get_start_index_and_duration, once finished it will output an array of shape (x, y, time, 2, 5)
+   121                                               verbose will spame the terminal with information about whats going on, best to establish a few pixels you want to inspect rather than having this on all the time.
+   122                                           
+   123                                               in a run using global data that too 30 minutes, this function made up 703 seconds of the processing time
+   124                                               I would guess that 500 of those seconds can be attributed to get_start_index_and_duration
+   125                                               """
+   126                                               
+   127                                               #possibly resort and create new durations based on remaining dates
+   128                                               #look for sign changes in sst or PAR data, indicating high/low SST or light periods
+   129      2720     183939.0     67.6      0.3      array_like = numpy.squeeze(array_like)
+   130      2720      10581.0      3.9      0.0      chl_slice = numpy.squeeze(chl_slice)
+   131      2720     124349.0     45.7      0.2      chl_sbx_slice = numpy.squeeze(chl_sbx_slice)
+   132      2720     907620.0    333.7      1.7      zero_crossings = numpy.where(numpy.diff(numpy.sign(array_like)))[0]
+   133                                           
+   134                                               #find out which way we're going
+   135      2720       4087.0      1.5      0.0      highs = []
+   136      2720       2900.0      1.1      0.0      lows = []
+   137     56109      74748.0      1.3      0.1      for index in zero_crossings:
+   138                                                   #checks if the values are increasing or decreasing
+   139     53389     104504.0      2.0      0.2          forward_index = index + 1 if not (index + 1) > (len(array_like) + 1) else index
+   140     53389      85762.0      1.6      0.2          backward_index =  index - 1 if not (index - 1) < 0 else index
+   141                                                   #add to high period or low periods
+   142     53389    2376451.0     44.5      4.5          if array_like[forward_index] >= array_like[index] and array_like[backward_index] <= array_like[index]:
+   143     26380      33717.0      1.3      0.1              highs.append(index)
+   144     27009    1559201.0     57.7      3.0          elif array_like[forward_index] <= array_like[index] and array_like[backward_index] >= array_like[index]:
+   145     26794      34838.0      1.3      0.1              lows.append(index)
+   146                                           
+   147                                               #print(everything thus far
+   148      2720       3295.0      1.2      0.0      if verbose:
+   149                                                   print("***********************")
+   150                                                   print("highs and lows")
+   151                                                   print(highs)
+   152                                                   print(lows)
+   153      2720       3220.0      1.2      0.0      maximum_sst = []
+   154      2720       3434.0      1.3      0.0      max_yr_idx = len(array_like)
+   155      2720       2975.0      1.1      0.0      activity_period = None
+   156      2720       3024.0      1.1      0.0      try:
+   157                                                   """
+   158                                                   if we have identified some high and low periods check which one we start with, then add the opposite one to pad back to the beginning of the year (otherwise we can miss a lot of data)
+   159                                           
+   160                                                   This generally won't get used if you are working with more than one year of data
+   161                                                   """
+   162      2720       3703.0      1.4      0.0          if len(highs) and len(lows):
+   163      2720       5041.0      1.9      0.0              if not highs[0] == 0 and not lows[0] == 0:
+   164      2554       3209.0      1.3      0.0                  if highs[0] > lows[0]:
+   165      1890       3675.0      1.9      0.0                      highs = [0] + highs
+   166                                                           else:
+   167       664       1292.0      1.9      0.0                      lows = [0] + lows
+   168      2720       3455.0      1.3      0.0              if highs[-1] > lows[-1]:
+   169      1516       3302.0      2.2      0.0                  highs.append(len(array_like))
+   170                                                       else:
+   171      1204       2133.0      1.8      0.0                  lows.append(len(array_like))
+   172                                                   elif len(highs) and not len(lows):
+   173                                                       lows = [0, len(array_like)]
+   174                                                   elif len(lows) and not len(highs):
+   175                                                       highs = [0, len(array_like)]
+   176                                                   else:
+   177                                                       return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year)], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year)]
+   178                                               except Exception as e:
+   179                                                   #triggered once, but was helpful to know what the contents were
+   180                                                   print(highs)
+   181                                                   print(lows)
+   182                                                   print(e)
+   183                                           
+   184                                               #chuck out the results
+   185      2720       3162.0      1.2      0.0      if verbose:
+   186                                                   print("updated highs and lows")
+   187                                                   print(highs)
+   188                                                   print(lows)
+   189                                           
+   190      2720       2906.0      1.1      0.0      high_records = []
+   191      2720       3038.0      1.1      0.0      low_records = []
+   192     56109      81124.0      1.4      0.2      for index in zero_crossings:
+   193                                                   #we've classified them, this just lets us select out the high and low period
+   194     53389     104946.0      2.0      0.2          if index in highs:
+   195     26380      29736.0      1.1      0.1              activity_period = 1
+   196     26380      29446.0      1.1      0.1              try:
+   197     26380     119456.0      4.5      0.2                  end_date = next(x for x in lows if x > index)
+   198      1516       2576.0      1.7      0.0              except StopIteration as e:
+   199      1516       1703.0      1.1      0.0                  continue
+   200                                                   else:
+   201     27009      31317.0      1.2      0.1              activity_period = 0
+   202     27009      30181.0      1.1      0.1              try:
+   203     27009     127610.0      4.7      0.2                  end_date = next(x for x in highs if x > index)
+   204      1224       2105.0      1.7      0.0              except StopIteration as e:
+   205      1224       1348.0      1.1      0.0                  continue
+   206     50649      60122.0      1.2      0.1          first = False
+   207                                                   
+   208     50649    5535396.0    109.3     10.5          chl_sbx_period_slice = chl_sbx_slice[index:end_date].flatten()
+   209     50649     144261.0      2.8      0.3          chl_period_slice = chl_slice[index:end_date].flatten()
+   210                                                   #get the phenology for this period, depth pads extra data if needed for numpy (we don't use this for SST model)
+   211     50649   38966189.0    769.3     73.9          period_chl_phenology = get_start_index_and_duration(chl_sbx_period_slice,chl_period_slice,index,depth=5,verbose=verbose)
+   212                                                   #if we found anything
+   213     50649      71766.0      1.4      0.1          if len(period_chl_phenology):
+   214                                                       #loop through them and add them to the high/low mega lists
+   215    109366     136228.0      1.2      0.3              for record in period_chl_phenology:
+   216     68627      77067.0      1.1      0.1                  if activity_period:
+   217     29195      38161.0      1.3      0.1                      high_records.append(record)
+   218                                                           else:
+   219     39432      50596.0      1.3      0.1                      low_records.append(record)
+   220                                               
+   221                                               #to remind ourselves what the phenology records look like
+   222                                               #[start,end,end-start,max_idx,chl_values[max_idx]]
+   223      2720       3274.0      1.2      0.0      blooms = []
+   224      2720       3011.0      1.1      0.0      ngds = []
+   225      2720       2986.0      1.1      0.0      total_no_of_blooms = []
+   226     27200      37541.0      1.4      0.1      for year in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year):
+   227                                                   #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
+   228    287235     401016.0      1.4      0.8          possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
+   229    379368     518785.0      1.4      1.0          possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
+   230                                           
+   231                                                   """
+   232                                                   For date sorting and output should we take something like 
+   233                                           
+   234                                                   jjason = [all blooms between june and november]
+   235                                                   djfmam = [all blooms between december and may]
+   236                                                   this would need to be worked out from the number of observations per year - is it based on the date of the maximum?
+   237                                           
+   238                                           
+   239                                                   then skip from here to line 259 and establish the high/low in jjason/djfmam
+   240                                                   count the ngd/total_blooms
+   241                                                   output as seperate set of arrays
+   242                                                   """
+   243                                           
+   244     24480      27682.0      1.1      0.1          if verbose:
+   245                                                       print(year)
+   246                                                       print("found ", len(possible_high_blooms), " highs")
+   247                                                       print("found ", len(possible_low_blooms), " lows")
+   248                                           
+   249                                                   #reduce them to one record
+   250     24480      97879.0      4.0      0.2          low = phen_records_to_one_val_on_max(possible_low_blooms, year)
+   251     24480      82563.0      3.4      0.2          high = phen_records_to_one_val_on_max(possible_high_blooms, year)
+   252     24480      30337.0      1.2      0.1          if not low or not high:
+   253                                                       print("***************")
+   254                                                       print(high_records)
+   255                                                       print(low_records)
+   256                                                       print(year - reverse_search)
+   257                                                       print(possible_high_blooms)
+   258                                                       print(possible_low_blooms)
+   259                                                       print(low, high)
+   260                                                   #spit out the low period and high period for this year
+   261     24480      34551.0      1.4      0.1          blooms.append([low,high])
+   262                                                   #establish if the date is within the year - does this need to be tested for?
+   263                                                   #alternative is (date_seperation_per_year // 0.630136986) to get in first 230 days but this seems wrong
+   264                                                   #we have all of the blooms in a year, could establish how many total bloom peaks over a year vs 2 blooms - is this necessarily much higher than
+   265     24480      30207.0      1.2      0.1          if low[3] or high[3]:
+   266     23284      27542.0      1.2      0.1              if low[3]:
+   267     20357      32642.0      1.6      0.1                  n1 = 1 if abs(low[3]) <= (date_seperation_per_year) else 0
+   268                                                       else:
+   269      2927       3450.0      1.2      0.0                  n1 = 0
+   270     23284      27030.0      1.2      0.1              if high[3]:
+   271     18096      26155.0      1.4      0.0                  n2 = 1 if abs(high[3]) <= (date_seperation_per_year) else 0
+   272                                                       else:
+   273      5188       5848.0      1.1      0.0                  n2 = 0
+   274     23284      29060.0      1.2      0.1              no1 = 1 if n1 == 1 and n2 != 1 else 0
+   275     23284      28105.0      1.2      0.1              no2 = 1 if n2 == 1 and n1 != 1 else 0
+   276     23284      28277.0      1.2      0.1              ngd = 2 if not no1 or no2 else no1 if no1 else no2
+   277                                                   else:
+   278      1196       1462.0      1.2      0.0              ngd = None
+   279     24480      31669.0      1.3      0.1          ngds.append(ngd)
+   280      2720       3060.0      1.1      0.0      return blooms, ngds
+

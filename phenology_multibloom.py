@@ -9,6 +9,7 @@ import glob
 import sys
 import math
 import tqdm
+import calendar
 from fast_polarity.polarity import polarity_edge_finder_optimised as polaritiser
 
 #TODO Set dynamically from the input netcdf or user specified from command line
@@ -18,6 +19,8 @@ FILL_VAL = -9.999999999999998e+33
 MEDIAN_THRESHOLD_DEFAULT = 20
 LAT_IDX = 2
 LON_IDX = 3
+REF_MONTH = 'January'
+END_MONTH = 'December'
 
 output_location = None
 
@@ -277,6 +280,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         if year + date_seperation_per_year > chl_sbx_slice.shape[0]:
             continue
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
+        #this is where I have concerns that there are problems with the selection of blooms, if we're doing a year with reference month of June
+        #then this currently selects june - june, rather than january - december, is this correct? The central month 
         possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
         possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
 
@@ -315,8 +320,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             print(low_blooms)
         #reduce them to one record
         #additionally look at using max vs duration for the bloom selection
-        low = phen_records_to_one_val_on_max(low_blooms, year)
-        high = phen_records_to_one_val_on_max(high_blooms, year)
+        low = phen_records_to_one_val_on_max(low_blooms, year + start_date)
+        high = phen_records_to_one_val_on_max(high_blooms, year + start_date)
         if not low or not high:
             print("***************")
             print(high_records)
@@ -416,7 +421,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
             date_masks.append(date_zeniths)
         
         temp_chl_array = chl_array.copy()
-        ods = nc.Dataset("lat_zen_angle.nc", "w")
+        ods = nc.Dataset(os.path.join(numpy_storage,"lat_zen_angle.nc"), "w")
         ods.createDimension('LATITUDE', chl_lats.shape[0])
         ods.createDimension('LONGITUDE', chl_lons.shape[0])
         ods.createDimension('TIME', date_seperation)
@@ -455,7 +460,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
         print("median value: {}".format(med5))
         print("median threshold: {}".format(median_threshold))
 
-    ods = nc.Dataset("median_output.nc", "w")
+    ods = nc.Dataset(os.path.join(numpy_storage,"median_output.nc"), "w")
     ods.createDimension('LATITUDE', chl_lats.shape[0])
     ods.createDimension('LONGITUDE', chl_lons.shape[0])
     ods.createDimension('TIME', 1)
@@ -545,21 +550,23 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.variables['TIME'].setncattr("units", "years")
     #switch back to LATITIUDE and LONGITUDE, establish why the flipping of the axis makes everything go screwey
     ds.createVariable('date_start1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
-    ds.variables['date_start1'].setncattr("units", "weeks")
+    week_descriptor = 'weeks from {}'.format(REF_MONTH)
+    #description = ' data between {} and {} for years {} to {}'.format(REF_MONTH, END_MONTH, START_YEAR, END_YEAR)
+    ds.variables['date_start1'].setncattr("units", week_descriptor)
     ds.createVariable('date_max1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
-    ds.variables['date_max1'].setncattr("units", "weeks")
+    ds.variables['date_max1'].setncattr("units", week_descriptor)
     ds.createVariable('date_end1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
-    ds.variables['date_end1'].setncattr("units", "weeks")
+    ds.variables['date_end1'].setncattr("units", week_descriptor)
     ds.createVariable('duration1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
-    ds.variables['duration1'].setncattr("units", "weeks")
+    ds.variables['duration1'].setncattr("units", week_descriptor)
     ds.createVariable('date_start2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
-    ds.variables['date_start2'].setncattr("units", "weeks")
+    ds.variables['date_start2'].setncattr("units", week_descriptor)
     ds.createVariable('date_max2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
-    ds.variables['date_max2'].setncattr("units", "weeks")
+    ds.variables['date_max2'].setncattr("units", week_descriptor)
     ds.createVariable('date_end2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
-    ds.variables['date_end2'].setncattr("units", "weeks")
+    ds.variables['date_end2'].setncattr("units", week_descriptor)
     ds.createVariable('duration2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
-    ds.variables['duration2'].setncattr("units", "weeks")
+    ds.variables['duration2'].setncattr("units", week_descriptor)
     ds.createVariable('max_val1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.createVariable('max_val2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['max_val2'].setncattr("units", "mgChl/m3")
@@ -629,7 +636,6 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     total_blooms = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int((chl_data.shape[0] -start_date) // date_seperation_per_year)))
     year_true_start_end_array.fill(FILL_VAL)
     total_blooms.fill(FILL_VAL)
-    completion_points = range(0, chl_data.shape[2], chl_data.shape[2] // 10)
     print("doing sst initiations and correction")
     for ix, iy in tqdm.tqdm(numpy.ndindex(chl_data.shape[2], chl_data.shape[3]), total=(chl_data.shape[2] * chl_data.shape[3])):
         try:
@@ -684,7 +690,7 @@ if __name__ == "__main__":
     parser.add_argument("--sst_var", help="specify the sst variable name, otherwise is guessed based on variables containing 'sst'", default="sst", required=False)
     parser.add_argument("--output", help="output filename, if not specified defaults to (chlorophyll_filename)_phenology.nc in the current folder", default=None, required=False)
     parser.add_argument("--date_seperation_per_year", help="how many temporal observations we have in a year, if not specified will be guessed", default=47, required=False)
-    parser.add_argument("--first_date_index", help="specify if the first date you want to include is not the first date present in the date stack", default=0, required=False)
+    parser.add_argument("--first_date_index", help="specify if the first date you want to include is not the first date present in the date stack.", default=1, required=False)
     parser.add_argument("--chl_climatology", action="store_true", help="extend the input chlorophyll array by creatingidentical copied for the year previous and year next", default=0, required=False)
     parser.add_argument("--intermediate_file_store", help="change where intermediate numpy files are placed, if not specified then /tmp is assumed - you should specify somewhere else if your tmp cannot handle the array sizes needed (and currently this program will fill it until it cannot).", required=False)
     parser.add_argument("--reverse_search", default=False, help="specify the number of observations to search in the previous year, if not specified will be calculated as a representation of 100 days (date_seperation_per_year / 0.27).", required=False)
@@ -695,6 +701,7 @@ if __name__ == "__main__":
     #give options for both since we might end up in a situation where sst is 3 years and chl is one year (or vice versa)
     parser.add_argument("--extend_chl_data", default=False, action="store_true", help="extends chlorophyll by copying the (central) chl array to the year previous and year next")
     parser.add_argument("--extend_sst_data", default=False, action="store_true", help="extends sea surfaace temperature by copying the (central) chl array to the year previous and year next")
+    parser.add_argument("--start_year", default=0, help="What year to use as the start point for metadata output, if not specified will use 0, affects no processing.")
     parser.add_argument("--reshape", default=False, action="store_true", help="reshape to be t, 1, x, y")
     args = parser.parse_args()
     med_thresh = 1+ (float(args.median_threshold) / 100)
@@ -709,6 +716,14 @@ if __name__ == "__main__":
     if not args.reverse_search:
         reverse_search = int(round(int(args.date_seperation_per_year) * 0.28))
     print("Reverse search:{}".format(reverse_search))
+
+    start_date = None
+    start_date = int(args.first_date_index) - 1 if not start_date else start_date
+
+    mon_index = int(start_date // (date_seperation_per_year / 12))
+    REF_MONTH = calendar.month_name[mon_index]
+    END_MONTH = calendar.month_name[mon_index + 11 - 12]
+    START_YEAR = args.start_year
 
     #TODO list of files or file specified (mid november)
     for chl_location in args.chl_location:
@@ -761,11 +776,8 @@ if __name__ == "__main__":
             print("adjusting to flip lat and lon")
             chl_array.shape = (chl_array.shape[0], chl_array.shape[1], chl_array.shape[3], chl_array.shape[2])
         """
-        start_date = None
-        start_date = int(args.first_date_index) if not start_date else start_date
         if args.extend_chl_data:
             chl_array, start_date = extend_array(chl_array, date_seperation_per_year, start_date)
-
 
         chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage, date_seperation_per_year, chl_lats, chl_lons, do_model_med=args.modelled_median, median_threshold=med_thresh)
         print("chl_shape: {}".format(chl_shape))

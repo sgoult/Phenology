@@ -10,6 +10,7 @@ import sys
 import math
 import tqdm
 import calendar
+import datetime
 from fast_polarity.polarity import polarity_edge_finder_optimised as polaritiser
 
 #TODO Set dynamically from the input netcdf or user specified from command line
@@ -158,7 +159,7 @@ def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
 def polarity_edge_finder(input_array):
     return (numpy.diff(numpy.sign(input_array)) != 0)*1
 
-def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_seperation_per_year, reverse_search, start_date=0, verbose=False):
+def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_seperation_per_year, reverse_search, start_date=0, reference_date=0, verbose=False):
     """
     Attributes the start and end times in relation to the SST or solar cycle, takes an sst array (array_like), smoothed chlorophyll derivative slice (chl_sbx_slice) and the original chlorophyll data.
 
@@ -282,8 +283,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
         #this is where I have concerns that there are problems with the selection of blooms, if we're doing a year with reference month of June
         #then this currently selects june - june, rather than january - december, is this correct? The central month 
-        possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
-        possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year) and x[1] > year]
+        possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year + start_date) and x[1] > year]
+        possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year + start_date) and x[1] > year]
 
         #filters out the blooms that might overlap
         high_removals = []
@@ -320,8 +321,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             print(low_blooms)
         #reduce them to one record
         #additionally look at using max vs duration for the bloom selection
-        low = phen_records_to_one_val_on_max(low_blooms, year + start_date)
-        high = phen_records_to_one_val_on_max(high_blooms, year + start_date)
+        low = phen_records_to_one_val_on_max(low_blooms, year + reference_date)
+        high = phen_records_to_one_val_on_max(high_blooms, year + reference_date)
         if not low or not high:
             print("***************")
             print(high_records)
@@ -421,7 +422,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
             date_masks.append(date_zeniths)
         
         temp_chl_array = chl_array.copy()
-        ods = nc.Dataset(os.path.join(numpy_storage,"lat_zen_angle.nc"), "w")
+        ods = nc.Dataset("lat_zen_angle_{}.nc".format(datetime.datetime.now().strftime("%H%M")), "w")
         ods.createDimension('LATITUDE', chl_lats.shape[0])
         ods.createDimension('LONGITUDE', chl_lons.shape[0])
         ods.createDimension('TIME', date_seperation)
@@ -460,7 +461,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
         print("median value: {}".format(med5))
         print("median threshold: {}".format(median_threshold))
 
-    ods = nc.Dataset(os.path.join(numpy_storage,"median_output.nc"), "w")
+    ods = nc.Dataset(os.path.join(numpy_storage,"median_output_{}.nc".format(datetime.datetime.now().strftime("%H%M"))), "w")
     ods.createDimension('LATITUDE', chl_lats.shape[0])
     ods.createDimension('LONGITUDE', chl_lons.shape[0])
     ods.createDimension('TIME', 1)
@@ -523,7 +524,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     chl_boxcar_map = None
     return chl_boxcar.shape, chl_boxcar.dtype
 
-def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenology.nc"):
+def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenology_{}.nc".format(datetime.datetime.now().strftime("%H%M"))):
     """
     Creates the skeleton of the netcdf file to be used by write_to_output_netcdf, all of this is metadata.
     """
@@ -612,7 +613,7 @@ def write_to_output_netcdf(data, total_blooms=None, probability=None):
 def total_blooms_to_probability(array_like):
     return numpy.count_nonzero(array_like == 2) / array_like.size
 
-def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=47, start_date=0, reverse_search=20):
+def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=47, start_date=0, reverse_search=20, reference_index=0):
     #this all works on the assumption the axis 0 is time
     print("reading variables")
     chl_boxcar = numpy.memmap(os.path.join(numpy_storage, "chl_sbx"), mode="r", dtype=chl_dtype, shape=chl_shape)
@@ -643,7 +644,7 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
             if iy == 0 and ix == 13:
                 print(ix,iy)
                 verbose = True
-            results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=verbose, start_date=start_date)
+            results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=verbose, start_date=start_date, reference_date=reference_index)
             year_true_start_end_array[ix,iy] = results[0]
             total_blooms[ix,iy] = results[1]
             if verbose:
@@ -652,7 +653,7 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
         except Exception as e:
             print(e)
             print(repr(e))
-            print(match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date))
+            print(match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date, reference_date=reference_index))
             print()
         """
         if ix in completion_points and iy == 0:
@@ -690,7 +691,8 @@ if __name__ == "__main__":
     parser.add_argument("--sst_var", help="specify the sst variable name, otherwise is guessed based on variables containing 'sst'", default="sst", required=False)
     parser.add_argument("--output", help="output filename, if not specified defaults to (chlorophyll_filename)_phenology.nc in the current folder", default=None, required=False)
     parser.add_argument("--date_seperation_per_year", help="how many temporal observations we have in a year, if not specified will be guessed", default=47, required=False)
-    parser.add_argument("--first_date_index", help="specify if the first date you want to include is not the first date present in the date stack.", default=1, required=False)
+    parser.add_argument("--first_date_index", help="Specify if the first date you want to include is not the first date present in the date stack.", default=1, required=False)
+    parser.add_argument("--reference_index", help="Date index in relation to first_date_index to use as the reference from which weeks are measured in the phenology output. If specified is used as first_date_index + reference_index, if not set will measure from first_date_index (default 1)", default=1, required=False)
     parser.add_argument("--chl_climatology", action="store_true", help="extend the input chlorophyll array by creatingidentical copied for the year previous and year next", default=0, required=False)
     parser.add_argument("--intermediate_file_store", help="change where intermediate numpy files are placed, if not specified then /tmp is assumed - you should specify somewhere else if your tmp cannot handle the array sizes needed (and currently this program will fill it until it cannot).", required=False)
     parser.add_argument("--reverse_search", default=False, help="specify the number of observations to search in the previous year, if not specified will be calculated as a representation of 100 days (date_seperation_per_year / 0.27).", required=False)
@@ -719,10 +721,15 @@ if __name__ == "__main__":
 
     start_date = None
     start_date = int(args.first_date_index) - 1 if not start_date else start_date
+    ref_index = int(args.reference_index) - 1
 
-    mon_index = int(start_date // (date_seperation_per_year / 12))
+    if (ref_index + start_date) > (date_seperation_per_year + start_date):
+        print("reference index is too great and would result in mostly or all negative values.")
+        sys.exit()
+
+    mon_index = int((start_date + ref_index) // (date_seperation_per_year / 12))
     REF_MONTH = calendar.month_name[mon_index]
-    END_MONTH = calendar.month_name[mon_index + 11 - 12]
+    print("reference month (central):", REF_MONTH)
     START_YEAR = args.start_year
 
     #TODO list of files or file specified (mid november)
@@ -795,7 +802,7 @@ if __name__ == "__main__":
         if args.output:
             output = args.output
         else:
-            output = chl_filename.replace(".nc", "_phenology.nc")
+            output = chl_filename.replace(".nc", "_phenology_{}.nc".format(datetime.datetime.now().strftime("%H%M")))
         
         print("creating output netcdf {}".format(output))
         #simple regridding
@@ -810,4 +817,5 @@ if __name__ == "__main__":
                                         sst_dtype, 
                                         date_seperation_per_year=date_seperation_per_year, 
                                         start_date=start_date, 
-                                        reverse_search=reverse_search)
+                                        reverse_search=reverse_search,
+                                        reference_index=ref_index)

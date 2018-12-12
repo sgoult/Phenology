@@ -283,8 +283,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
         #this is where I have concerns that there are problems with the selection of blooms, if we're doing a year with reference month of June
         #then this currently selects june - june, rather than january - december, is this correct? The central month 
-        possible_high_blooms = [x for x in high_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year + start_date) and x[1] > year]
-        possible_low_blooms = [x for x in low_records if x[0] > (year - reverse_search) and x[1] < (year + date_seperation_per_year + start_date) and x[1] > year]
+        possible_high_blooms = [x for x in high_records if x[3] > (year - reverse_search) and x[3] < (year + date_seperation_per_year)]
+        possible_low_blooms = [x for x in low_records if x[3] > (year - reverse_search) and x[3] < (year + date_seperation_per_year)]
 
         #filters out the blooms that might overlap
         high_removals = []
@@ -338,8 +338,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             print(high)
             print("low bloom")
             print(low)
-        high_val = high[3] if high[3] else -1000
-        low_val = low[3] if low[3] else -1000
+        high_val = high[4] if high[4] else -1000
+        low_val = low[4] if low[4] else -1000
         if low_val > high_val:
             blooms.append([low,high])
         else:
@@ -452,7 +452,8 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
         #TODO add gap filling, --gap-filling with a few choices for interpolation options, if not specified then don't do it at all
 
         print("med5")
-        med5 = numpy.ma.median(temp_chl_array,axis = 0)
+        temp_chl_array
+        med5 = numpy.ma.median(temp_chl_array,axis=0)
         print("median value: {}".format(med5))
         print("median threshold: {}".format(median_threshold))
     else:
@@ -641,7 +642,7 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     for ix, iy in tqdm.tqdm(numpy.ndindex(chl_data.shape[2], chl_data.shape[3]), total=(chl_data.shape[2] * chl_data.shape[3])):
         try:
             verbose=False
-            if iy == 0 and ix == 13:
+            if iy == 143 and ix == 112:
                 print(ix,iy)
                 verbose = True
             results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=verbose, start_date=start_date, reference_date=reference_index)
@@ -728,6 +729,7 @@ if __name__ == "__main__":
         sys.exit()
 
     mon_index = int((start_date + ref_index) // (date_seperation_per_year / 12))
+    print(mon_index)
     REF_MONTH = calendar.month_name[mon_index]
     print("reference month (central):", REF_MONTH)
     START_YEAR = args.start_year

@@ -95,10 +95,10 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
 
 
     if verbose:
-        print("zero crossings")
-        print(zero_crossings)
-        print("chl sbx")
+        print("chl sbx for current period")
         print(array_like)
+        print("zero crossings in chl sbx")
+        print(zero_crossings)
     #find out which way we're going
     starts = []
     ends = []
@@ -111,8 +111,8 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
             ends.append(len(array_like))
     if verbose:
         print("starts and ends")
-        print(starts)
-        print(ends)
+        print("starts: ", starts)
+        print("ends: ", ends)
     #find an end for every start
     dates = []
     for start in starts:
@@ -184,8 +184,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     zero_crossings = numpy.where(polaritiser(array_like.astype(numpy.float)))[0]
 
     if verbose:
-        print("array like and zero crossings")
+        print("sst values for pixel")
         print(array_like)
+        print("zero crossings of sst for pixel")
         print(zero_crossings)
 
     #find out which way we're going
@@ -197,9 +198,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     #print(everything thus far
     if verbose:
         print("***********************")
-        print("highs and lows")
-        print(highs)
-        print(lows)
+        print("starts of high and low periods")
+        print("highs: ", highs)
+        print("lows: ", lows)
     maximum_sst = []
     activity_period = None
     try:
@@ -232,9 +233,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
     #chuck out the results
     if verbose:
-        print("updated highs and lows")
-        print(highs)
-        print(lows)
+        print("updated highs and lows after filtering and correcting for missing dates")
+        print("highs: ", highs)
+        print("lows: ", lows)
 
     high_records = []
     low_records = []
@@ -256,8 +257,15 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #10% of time in function
         #each low/high period is treated as a seperate entity, so we can look forward and backward in time without worrying too much about the overlap
         pad = int(round((end_date - index) * 0.20))
+        #pad = 0
+        if verbose:
+            print("running bloom detection for period: ", start, end_date)
+            print("this is a ", "high" if activity_period else "low", "period")
         end_date = int(round(end_date + pad))
         start = index - pad if index >= pad else index
+        if verbose:
+            print("padding period with ", pad, "entries")
+            print("resultant dates (start, end): ", start, end_date)
         chl_sbx_period_slice = chl_sbx_slice[start:end_date]
         chl_period_slice = chl_slice[start:end_date]
         #get the phenology for this period, depth pads extra data if needed for numpy (we don't use this for SST model)
@@ -310,9 +318,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         low_blooms = possible_low_blooms
 
         if verbose:
-            print(year)
-            print("found ", len(possible_high_blooms), " highs")
-            print("found ", len(possible_low_blooms), " lows")
+            print("working on year: ", year)
+            print("found ", len(possible_high_blooms), " high blooms")
+            print("found ", len(possible_low_blooms), " low blooms")
         
         if verbose:
             print("highs")
@@ -642,7 +650,7 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     for ix, iy in tqdm.tqdm(numpy.ndindex(chl_data.shape[2], chl_data.shape[3]), total=(chl_data.shape[2] * chl_data.shape[3])):
         try:
             verbose=False
-            if iy == 143 and ix == 112:
+            if iy == args.debug_pixel[0] and ix == args.debug_pixel[1]:
                 print(ix,iy)
                 verbose = True
             results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=verbose, start_date=start_date, reference_date=reference_index)
@@ -705,6 +713,7 @@ if __name__ == "__main__":
     parser.add_argument("--extend_chl_data", default=False, action="store_true", help="extends chlorophyll by copying the (central) chl array to the year previous and year next")
     parser.add_argument("--extend_sst_data", default=False, action="store_true", help="extends sea surfaace temperature by copying the (central) chl array to the year previous and year next")
     parser.add_argument("--start_year", default=0, help="What year to use as the start point for metadata output, if not specified will use 0, affects no processing.")
+    parser.add_argument("--debug_pixel",  nargs='+', default=[143,112], type=int, help="pixle in x, y (lat, lon), these entries are 0 indexed.")
     parser.add_argument("--reshape", default=False, action="store_true", help="reshape to be t, 1, x, y")
     args = parser.parse_args()
     med_thresh = 1+ (float(args.median_threshold) / 100)
@@ -779,6 +788,8 @@ if __name__ == "__main__":
 
         #check if there are any nans in the data
         chl_array = numpy.ma.masked_invalid(chl_array)
+
+        print("using debug pixel:", args.debug_pixel, " which equates to:", chl_lats[args.debug_pixel[1]], "N", chl_lons[args.debug_pixel[0]], "E", "(zero indexed so you may need to add 1 to get reference in other software)")
 
         """
         if not (chl_array.shape[2] == chl_lats.shape[0] and chl_array.shape[3] == chl_lons.shape[0]):

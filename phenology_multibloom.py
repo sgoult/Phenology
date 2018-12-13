@@ -11,6 +11,8 @@ import math
 import tqdm
 import calendar
 import datetime
+import scipy.misc
+import functools
 from fast_polarity.polarity import polarity_edge_finder_optimised as polaritiser
 
 #TODO Set dynamically from the input netcdf or user specified from command line
@@ -22,6 +24,7 @@ LAT_IDX = 2
 LON_IDX = 3
 REF_MONTH = 'January'
 END_MONTH = 'December'
+USE_DTYPE = "float64"
 
 output_location = None
 
@@ -66,13 +69,12 @@ def boxcar_smoothing(x, window):
    return x*window
 
 def centered_diff_derivative(array_like):
-   """
-   calculates the first derivative from centered difference
-   """
-   x = range(0, array_like.shape[0])
-   dx = x[1] - x[0] # if we ever change to non uniform jumps in time use numpy.diff
-   cf = numpy.convolve(array_like, [1,-1],'same') / dx
-   return cf
+    """
+    calculates the first derivative from centered difference
+    """
+    squeezed = array_like.squeeze()
+    cf = numpy.convolve(squeezed, [1,0,-1],'same') / 1
+    return cf
 
 def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_values=False, verbose=False):
     """
@@ -93,35 +95,82 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
         zero_crossings = []
     true_poss = zero_crossings
 
-
     if verbose:
         print("chl sbx for current period")
         print(array_like)
         print("zero crossings in chl sbx")
         print(zero_crossings)
+
+    
+    """
+    if not first_real_val in zero_crossings:
+        print(first_real_val)
+        print(array_like[first_real_val])
+        zero_crossings = [first_real_val] + zero_crossings
+        zero_crossings.sort()
+    """
+
     #find out which way we're going
     starts = []
     ends = []
     #works much the same qas the SST one below
-    starts = [x for x in zero_crossings if array_like[x] < 0]
-    ends = [x for x in zero_crossings if array_like[x] > 0]
+    #TODO work out why we have dropped the first index (1) from starts - theres no reason it should be doing this!!
+    poss_starts = [x for x in zero_crossings if array_like[x] < 0]
+    poss_ends = [x for x in zero_crossings if array_like[x] > 0]
+
+    starts = []
+    #flip this around!
+    already_tested = False
+    for idx, date in enumerate(poss_starts):
+        if not idx == len(poss_starts) - 1:
+            #TODO change this to a command line option
+            if already_tested:
+                already_tested = False
+                continue
+            if (poss_starts[idx+1] - date) <= 5:
+                starts.append(date)
+                already_tested = True
+            else:
+                starts.append(date)
+        else:
+            if (date - poss_starts[idx-1]) > 5:
+                starts.append(date)
+    ends = []
+    for start in starts:
+        try:
+            ends.append(next(x for x in poss_ends if x > start))
+        except:
+            continue
+
     #we know the last entry will be an end
     if starts and ends:
         if starts[-1] > ends[-1]:
             ends.append(len(array_like))
+
+    durations = []
+    for start in starts:
+        end = next(x for x in ends if x > start)
+        dura = end - start +1 
+        durations.append(dura)
+        
+            
+
+
     if verbose:
         print("starts and ends")
+        print("durations:", durations)
         print("starts: ", starts)
         print("ends: ", ends)
+
     #find an end for every start
     dates = []
-    for start in starts:
+    for idx, start in enumerate(starts):
+        if durations[idx] <= 2:
+            continue
         try:
            end = next(x for x in ends if x > start)
-           if verbose:
-               print("chl values")
-           max_idx = numpy.nanargmax(chl_values[start:end])
-           dates.append([start + date_offset,end + date_offset,end-start,max_idx + date_offset + start,chl_values[max_idx + start]])
+           max_idx = numpy.nanargmax(chl_values[start:end + 1])
+           dates.append([start + date_offset,end + date_offset,end-start,max_idx + date_offset + start,chl_values[max_idx + date_offset + start]])
            max_idx = None
         except StopIteration:
             continue
@@ -135,6 +184,12 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
     if verbose:
         print("end dates")
         print(dates)
+
+        print("maxes")
+        print([x[4] for x in dates])
+    
+        print("tmaxes")
+        print([x[3] for x in dates])
     return dates
 
 def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
@@ -237,6 +292,10 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         print("highs: ", highs)
         print("lows: ", lows)
 
+    period_chl_phenology = get_start_index_and_duration(chl_sbx_slice,chl_slice,0,depth=5,verbose=verbose)
+    sys.exit()
+    
+
     high_records = []
     low_records = []
     for index in zero_crossings:
@@ -259,7 +318,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         pad = int(round((end_date - index) * 0.20))
         #pad = 0
         if verbose:
-            print("running bloom detection for period: ", start, end_date)
+            print("running bloom detection for period: ", index, end_date)
             print("this is a ", "high" if activity_period else "low", "period")
         end_date = int(round(end_date + pad))
         start = index - pad if index >= pad else index
@@ -270,6 +329,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         chl_period_slice = chl_slice[start:end_date]
         #get the phenology for this period, depth pads extra data if needed for numpy (we don't use this for SST model)
         #73% of time in function
+        #run this before then sort into high/low periods
         period_chl_phenology = get_start_index_and_duration(chl_sbx_period_slice,chl_period_slice,start,depth=5,verbose=verbose)
         #if we found anything
         if len(period_chl_phenology):
@@ -380,23 +440,32 @@ def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     """
     #smoothed sst
     if not skip:
-        sst_boxcar = numpy.apply_along_axis(numpy.convolve, 0, sst_array, numpy.ones((8,))/8, mode='valid')
+        print("smoothing sst")
+        #print(sst_array[:20,:,100,281])
+        print(sst_array[:5,:,100,281])
+        sst_boxcar = numpy.apply_along_axis(lambda m: numpy.convolve(m, numpy.ones(8)/8, mode='valid'), axis=0, arr=sst_array)
+        print("shape after sst sbx")
+        print(sst_boxcar[:5,:,100,281].shape)
         fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])), mask=numpy.ones((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])))
-        sst_boxcar = numpy.concatenate([fill_arr, fill_arr, fill_arr, sst_boxcar, fill_arr, fill_arr, fill_arr, fill_arr])
-        sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype='float64')
+        sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=USE_DTYPE)
         sst_boxcar_map[:] = sst_boxcar[:]
         sst_boxcar = None
         sst_boxcar = sst_boxcar_map
         sst_boxcar_map = None
         sst_array = None
         #get sst derivative
-        sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar)
+        print("doing sst_derivative")
+        sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar[5:,:,:,:])
+        sst_der = numpy.concatenate([fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, sst_der, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr])
+        print("shape after sst der")
+        print(sst_der[:5,:,100,281].shape)
     else:
         print("Skipped sst data preparation")
         sst_der = sst_array
         numpy.ma.set_fill_value(sst_array, fill_value=FILL_VAL)
         print(sst_array.shape)
-    sst_der_map = numpy.memmap(os.path.join(numpy_storage, "sst_der"), mode="w+", shape=sst_der.shape, dtype='float64')
+    sst_der_map = numpy.memmap(os.path.join(numpy_storage, "sst_der"), mode="w+", shape=sst_der.shape, dtype=USE_DTYPE)
+    print(sst_der)
     sst_der_map[:] = sst_der[:]
     return sst_der.shape, 'float64'
 
@@ -495,7 +564,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     #get anomalies
     print("anomaly")
     anomaly = chl_array - (med5*median_threshold)
-    anomaly_map = numpy.memmap(os.path.join(numpy_storage, "chl_anomaly"), mode="w+", shape=anomaly.shape, dtype=anomaly.dtype)
+    anomaly_map = numpy.memmap(os.path.join(numpy_storage, "chl_anomaly"), mode="w+", shape=anomaly.shape, dtype=USE_DTYPE)
     anomaly_map[:] = anomaly[:]
     #anomaly = anomaly_map
     chl_array = None
@@ -504,34 +573,45 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
 
     #get cumsum of anomalies
     print("chl cumsum")
-    chl_cumsum = numpy.ma.cumsum(anomaly,axis=1)
-    chl_cumsum_map = numpy.memmap(os.path.join(numpy_storage, "chl_cumsum"), mode="w+", shape=chl_cumsum.shape, dtype=chl_cumsum.dtype)
+    print(anomaly[:5,:,100,281])
+    chl_cumsum = numpy.ma.cumsum(anomaly,axis=0)
+    print(chl_cumsum[:5,:,100,281])
+    chl_cumsum_map = numpy.memmap(os.path.join(numpy_storage, "chl_cumsum"), mode="w+", shape=chl_cumsum.shape, dtype=USE_DTYPE)
     chl_cumsum_map[:] = chl_cumsum[:]
     #chl_cumsum = chl_cumsum_map
     anomaly = None
     chl_cumsum_map = None
 
-
     #get centered derivative        
     print("chl der")
+    print(chl_cumsum[:5,:,100,281])
     chl_der = numpy.apply_along_axis(centered_diff_derivative, 0, chl_cumsum)
-    chl_der_map = numpy.memmap(os.path.join(numpy_storage, "chl_der"), mode="w+", shape=chl_der.shape, dtype=chl_der.dtype)
+    print(chl_der[:5,:,100,281])
+    chl_der_map = numpy.memmap(os.path.join(numpy_storage, "chl_der"), mode="w+", shape=chl_der.shape, dtype=USE_DTYPE)
     chl_der_map[:] = chl_der[:]
     #chl_der = chl_der_map
     chl_cumsum = None
     chl_der_map = None
+    print(chl_der[:5,:,100,281])
+    
 
     #boxcar filter with width of 3 (sbx) should be something like this:
     print("chl sbx")
-    chl_boxcar = numpy.apply_along_axis(numpy.convolve, 0, chl_der, numpy.ones((8,))/8, mode='valid')
+    chl_boxcar = numpy.apply_along_axis(lambda m: numpy.convolve(m, numpy.ones(3)/3, mode='full'), axis=0, arr=chl_der)
+    print(chl_boxcar[:5,:,100,281])
     fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,chl_boxcar.shape[2],chl_boxcar.shape[3])), mask=numpy.ones((1,1,chl_boxcar.shape[2],chl_boxcar.shape[3])))
-    chl_boxcar = numpy.concatenate([fill_arr, fill_arr, fill_arr, chl_boxcar, fill_arr, fill_arr, fill_arr, fill_arr])
-    chl_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "chl_sbx"), mode="w+", shape=chl_boxcar.shape, dtype=chl_boxcar.dtype)
+    print("chl shape after boxcar")
+    print(chl_boxcar.shape)
+    chl_boxcar = numpy.concatenate([fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, chl_boxcar, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr])
+    print("chl shape after boxcar padding")
+    print(chl_boxcar.shape)
+    chl_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "chl_sbx"), mode="w+", shape=chl_boxcar.shape, dtype=USE_DTYPE)
     chl_boxcar_map[:] = chl_boxcar[:]
     chl_boxcar = None
     chl_boxcar = chl_boxcar_map
     chl_boxcar_map = None
-    return chl_boxcar.shape, chl_boxcar.dtype
+
+    return chl_boxcar.shape, USE_DTYPE
 
 def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenology_{}.nc".format(datetime.datetime.now().strftime("%H%M"))):
     """
@@ -625,10 +705,10 @@ def total_blooms_to_probability(array_like):
 def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=47, start_date=0, reverse_search=20, reference_index=0):
     #this all works on the assumption the axis 0 is time
     print("reading variables")
-    chl_boxcar = numpy.memmap(os.path.join(numpy_storage, "chl_sbx"), mode="r", dtype=chl_dtype, shape=chl_shape)
+    chl_boxcar = numpy.memmap(os.path.join(numpy_storage, "chl_sbx"), mode="r", dtype=USE_DTYPE, shape=chl_shape)
     chl_boxcar = chl_boxcar.copy()
     print(sst_dtype)
-    sst_der = numpy.memmap(os.path.join(numpy_storage, "sst_der"), mode="r", dtype=sst_dtype, shape=sst_shape)
+    sst_der = numpy.memmap(os.path.join(numpy_storage, "sst_der"), mode="r", dtype=USE_DTYPE, shape=sst_shape)
     sst_der = sst_der.copy()
     print("shapes after reading sst: {} chl: {}".format(chl_boxcar.shape, sst_der.shape))
     print("reshaping to sst: {} chl: {}".format(sst_shape, chl_shape))
@@ -653,6 +733,8 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
             if iy == args.debug_pixel[0] and ix == args.debug_pixel[1]:
                 print(ix,iy)
                 verbose = True
+            else:
+                continue
             results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=verbose, start_date=start_date, reference_date=reference_index)
             year_true_start_end_array[ix,iy] = results[0]
             total_blooms[ix,iy] = results[1]
@@ -715,12 +797,14 @@ if __name__ == "__main__":
     parser.add_argument("--start_year", default=0, help="What year to use as the start point for metadata output, if not specified will use 0, affects no processing.")
     parser.add_argument("--debug_pixel",  nargs='+', default=[143,112], type=int, help="pixle in x, y (lat, lon), these entries are 0 indexed.")
     parser.add_argument("--reshape", default=False, action="store_true", help="reshape to be t, 1, x, y")
+    parser.add_argument("--reshape_sst", default=False, action="store_true", help="reshape to be t, 1, x, y")
     args = parser.parse_args()
     med_thresh = 1+ (float(args.median_threshold) / 100)
     if not args.intermediate_file_store:
         numpy_storage = tempfile.mkdtemp(prefix="phenology_")
     else:
         numpy_storage = args.intermediate_file_store
+        os.mkdir(numpy_storage)
     #remember to change median threshold to percentage!
     #reverse search should be ratio of 100 days so 5 days * 20 = 100 or 8 days * 12.5 (so 13) = 100 days
     #as 100 days is 0.27 of 365 we can just do that
@@ -750,18 +834,27 @@ if __name__ == "__main__":
             print("only one file found, assuming full stack of observations")
             sst_ds = nc.Dataset(args.sst_location)
             sst_variable = [x for x in sst_ds.variables if args.sst_var in x.lower()][0]
-            sst_lon_var = [x for x in sst_ds.variables if "lon" in x.lower()][0]
-            sst_lat_var = [x for x in sst_ds.variables if "lat" in x.lower()][0]
+            try:
+                sst_lon_var = [x for x in sst_ds.variables if "lon" in x.lower()][0]
+                sst_lat_var = [x for x in sst_ds.variables if "lat" in x.lower()][0]
+            except:
+                print("trying to get lat/lon from standard name")
+                for va in sst_ds.variables:
+                    if "standard_name" in sst_ds.variables[va].__dict__.keys():
+                        if sst_ds.variables[va].__dict__["standard_name"] == "latitude":
+                            sst_lat_var= va
+                        elif sst_ds.variables[va].__dict__["standard_name"] == "longitude":
+                            sst_lon_var = va
             sst_lons = sst_ds.variables[sst_lon_var][:]
             sst_lats = sst_ds.variables[sst_lat_var][:]
             sst_array = sst_ds.variables[sst_variable][:]
             if args.extend_sst_data:
                 sst_array, _ = extend_array(sst_array, date_seperation_per_year, start_date)
-            if args.reshape:
-                sst_array.shape = (sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])
+            if args.reshape_sst:
+                sst_array.shape = (sst_array.shape[0], 1, sst_lats.shape[0], sst_lons.shape[0])
             sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
             print("sst_shape: {}".format(sst_shape))
-            print("sst_dtype: {}".format(sst_dtype))
+            print("sst_dtype: {}".format(USE_DTYPE))
             sst_array = None
 
         chl_files = chl_location
@@ -801,7 +894,7 @@ if __name__ == "__main__":
 
         chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage, date_seperation_per_year, chl_lats, chl_lons, do_model_med=args.modelled_median, median_threshold=med_thresh)
         print("chl_shape: {}".format(chl_shape))
-        print("chl_dtype: {}".format(chl_dtype))
+        print("chl_dtype: {}".format(USE_DTYPE))
 
         if sst_shape[2:] != chl_shape[2:]:
             print("sst and chlorophyll x,y array shapes do not match got:")

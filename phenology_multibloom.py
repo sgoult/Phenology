@@ -27,6 +27,7 @@ END_MONTH = 'December'
 USE_DTYPE = "float64"
 
 output_location = None
+output_location_date = None
 
 """
 Solar zenith stuff taken from jad
@@ -172,6 +173,13 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
            max_idx = numpy.nanargmax(chl_values[start:end + 1])
            dates.append([start + date_offset,end + date_offset,end-start,max_idx + date_offset + start,chl_values[max_idx + date_offset + start]])
            max_idx = None
+        except ValueError:
+            if chl_values[start:end + 1]:
+                print("val error encountered at max estimation, sequence was:")
+                print(chl_values[start:end + 1])
+                print("start end")
+                print(start, end)
+            continue
         except StopIteration:
             continue
         except Exception as e:
@@ -192,7 +200,7 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
         print([x[3] for x in dates])
     return dates
 
-def phen_records_to_one_val_on_max(records, date_correction=False, index=4):
+def phen_records_to_one_val_on_max(records, date_correction=False, index=4,verbose=False):
     """
     Reduces a list to one value, and corrects dates based on variable. Selects max chlorophyll as default, change index to whatever to sort by something else
     """
@@ -293,8 +301,6 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         print("lows: ", lows)
 
     period_chl_phenology = get_start_index_and_duration(chl_sbx_slice,chl_slice,0,depth=5,verbose=verbose)
-    sys.exit()
-    
 
     high_records = []
     low_records = []
@@ -320,6 +326,15 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         if verbose:
             print("running bloom detection for period: ", index, end_date)
             print("this is a ", "high" if activity_period else "low", "period")
+
+        if activity_period:
+            high_records.extend([x for x in period_chl_phenology if x[3] > index and x[3] < end_date])
+        else:
+            low_records.extend([x for x in period_chl_phenology if x[3] > index and x[3] < end_date])
+
+
+        """
+        old stuff
         end_date = int(round(end_date + pad))
         start = index - pad if index >= pad else index
         if verbose:
@@ -339,20 +354,23 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
                     high_records.append(record)
                 else:
                     low_records.append(record)
+        """
     
     #to remind ourselves what the phenology records look like
     #[start,end,end-start,max_idx,chl_values[max_idx]]
     blooms = []
     ngds = []
+    ngds_date = []
     total_blooms = []
+    blooms_by_date = []
     for year in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year):
         if year + date_seperation_per_year > chl_sbx_slice.shape[0]:
             continue
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
         #this is where I have concerns that there are problems with the selection of blooms, if we're doing a year with reference month of June
         #then this currently selects june - june, rather than january - december, is this correct? The central month 
-        possible_high_blooms = [x for x in high_records if x[3] > (year - reverse_search) and x[3] < (year + date_seperation_per_year)]
-        possible_low_blooms = [x for x in low_records if x[3] > (year - reverse_search) and x[3] < (year + date_seperation_per_year)]
+        possible_high_blooms = [x for x in high_records if x[3] > (year) and x[3] < (year + date_seperation_per_year) and not x[0] < (year - date_seperation_per_year)]
+        possible_low_blooms = [x for x in low_records if x[3] > (year) and x[3] < (year + date_seperation_per_year) and not x[0] < (year - date_seperation_per_year)]
 
         #filters out the blooms that might overlap
         high_removals = []
@@ -412,6 +430,47 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             blooms.append([low,high])
         else:
             blooms.append([high,low])
+
+        
+        #Alternative date sorting, based purely on high/low max date
+        high_date = high[3] if high[3] else -1000
+        low_date = low[3] if low[3] else -1000
+        if low_date > high_date:
+            blooms_by_date.append([high,low])
+        else:
+            blooms_by_date.append([low,high])
+        
+
+        """
+        date_sorted = [None, None]
+        if low[3]:
+            if low[3] > (date_seperation_per_year // 2):
+                date_sorted[1] = low
+            else:
+                date_sorted[0] = low
+        
+        #change here to change date sorting
+
+
+        if high[3]:
+            if high[3] > (date_seperation_per_year // 2):
+                if high and (not date_sorted[1] or high[4] > low[4]):
+                    date_sorted[1] = high
+            else:
+                if high and (not date_sorted[0] or high[4] > low[4]):
+                    date_sorted[0] = high
+        
+        if not date_sorted[0]:
+            date_sorted[0] = [None,None,None,None,None]
+        if not date_sorted[1]:
+            date_sorted[1] = [None,None,None,None,None]
+        
+
+        blooms_by_date.append(date_sorted)
+        """
+        ngd_date = int(not low[0] is None) + int(not high[0] is None)
+        ngds_date.append(ngd_date)
+        
         #establish if the date is within the year - does this need to be tested for?
         #alternative is (date_seperation_per_year // 0.630136986) to get in first 230 days but this seems wrong
         #we have all of the blooms in a year, could establish how many total bloom peaks over a year vs 2 blooms - is this necessarily much higher than
@@ -432,7 +491,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             ngd = 0
         ngds.append(ngd)
         total_blooms.append(len(possible_high_blooms) + len(possible_low_blooms))
-    return blooms, ngds, total_blooms
+    return blooms, ngds, blooms_by_date, ngds_date, total_blooms
 
 def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     """
@@ -445,7 +504,7 @@ def prepare_sst_variables(sst_array, numpy_storage, skip=False):
         print(sst_array[:5,:,100,281])
         sst_boxcar = numpy.apply_along_axis(lambda m: numpy.convolve(m, numpy.ones(8)/8, mode='valid'), axis=0, arr=sst_array)
         print("shape after sst sbx")
-        print(sst_boxcar[:5,:,100,281].shape)
+        print(sst_boxcar.shape)
         fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])), mask=numpy.ones((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])))
         sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=USE_DTYPE)
         sst_boxcar_map[:] = sst_boxcar[:]
@@ -456,9 +515,9 @@ def prepare_sst_variables(sst_array, numpy_storage, skip=False):
         #get sst derivative
         print("doing sst_derivative")
         sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar[5:,:,:,:])
-        sst_der = numpy.concatenate([fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, sst_der, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr])
+        sst_der = numpy.concatenate([fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, sst_der, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr,])
         print("shape after sst der")
-        print(sst_der[:5,:,100,281].shape)
+        print(sst_der.shape)
     else:
         print("Skipped sst data preparation")
         sst_der = sst_array
@@ -564,6 +623,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     #get anomalies
     print("anomaly")
     anomaly = chl_array - (med5*median_threshold)
+    print(anomaly[:5,:,100,281])
     anomaly_map = numpy.memmap(os.path.join(numpy_storage, "chl_anomaly"), mode="w+", shape=anomaly.shape, dtype=USE_DTYPE)
     anomaly_map[:] = anomaly[:]
     #anomaly = anomaly_map
@@ -573,7 +633,6 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
 
     #get cumsum of anomalies
     print("chl cumsum")
-    print(anomaly[:5,:,100,281])
     chl_cumsum = numpy.ma.cumsum(anomaly,axis=0)
     print(chl_cumsum[:5,:,100,281])
     chl_cumsum_map = numpy.memmap(os.path.join(numpy_storage, "chl_cumsum"), mode="w+", shape=chl_cumsum.shape, dtype=USE_DTYPE)
@@ -584,7 +643,6 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
 
     #get centered derivative        
     print("chl der")
-    print(chl_cumsum[:5,:,100,281])
     chl_der = numpy.apply_along_axis(centered_diff_derivative, 0, chl_cumsum)
     print(chl_der[:5,:,100,281])
     chl_der_map = numpy.memmap(os.path.join(numpy_storage, "chl_der"), mode="w+", shape=chl_der.shape, dtype=USE_DTYPE)
@@ -592,7 +650,6 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     #chl_der = chl_der_map
     chl_cumsum = None
     chl_der_map = None
-    print(chl_der[:5,:,100,281])
     
 
     #boxcar filter with width of 3 (sbx) should be something like this:
@@ -602,7 +659,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,chl_boxcar.shape[2],chl_boxcar.shape[3])), mask=numpy.ones((1,1,chl_boxcar.shape[2],chl_boxcar.shape[3])))
     print("chl shape after boxcar")
     print(chl_boxcar.shape)
-    chl_boxcar = numpy.concatenate([fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, chl_boxcar, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr])
+    chl_boxcar = numpy.concatenate([chl_boxcar, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr, fill_arr,])
     print("chl shape after boxcar padding")
     print(chl_boxcar.shape)
     chl_boxcar_map = numpy.memmap(os.path.join(numpy_storage, "chl_sbx"), mode="w+", shape=chl_boxcar.shape, dtype=USE_DTYPE)
@@ -613,13 +670,16 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
 
     return chl_boxcar.shape, USE_DTYPE
 
-def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenology_{}.nc".format(datetime.datetime.now().strftime("%H%M"))):
+def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenology_{}.nc".format(datetime.datetime.now().strftime("%H%M")), date=False):
     """
     Creates the skeleton of the netcdf file to be used by write_to_output_netcdf, all of this is metadata.
     """
-
-    global output_location
-    output_location = name
+    if date:
+        global output_location_date
+        output_location_date = name
+    else:
+        global output_location
+        output_location = name
     ds = nc.Dataset(name,'w',format='NETCDF4_CLASSIC')
 
     ds.createDimension('LONGITUDE', chl_lons.shape[0])
@@ -668,16 +728,19 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.close()
     print("created netcdf {}".format(name))
 
-def write_to_output_netcdf(data, total_blooms=None, probability=None):
+def write_to_output_netcdf(data, total_blooms=None, probability=None, date=False):
     """
     Loops through each year in the numpy array and writes the data to the netcdf file, this should work faster if we get rid of the loop but I can't seem to grock the logic to fix it right now.
     """
-    ds = nc.Dataset(output_location,'r+',format='NETCDF4_CLASSIC')
+    if date:
+        ds = nc.Dataset(output_location_date,'r+',format='NETCDF4_CLASSIC')
+        print("writing to:", output_location_date)
+    else:
+        ds = nc.Dataset(output_location,'r+',format='NETCDF4_CLASSIC')
+        print("writing to:", output_location)
     data = data.astype(numpy.float32)
     data = numpy.ma.fix_invalid(data)
-    print(output_location)
     print("pre-writing data shape: {}".format(data.shape))
-    print(data[:,:,:,0,0].shape)
     ds.variables['TIME'][:] = range(0, data.shape[2])
     for year in range(0, data.shape[2]):
         ds.variables['date_start1'][year] = data[:,:,year,0,0]
@@ -685,7 +748,6 @@ def write_to_output_netcdf(data, total_blooms=None, probability=None):
         ds.variables['date_end1'][year] = data[:,:,year,0,1]
         ds.variables['duration1'][year] = data[:,:,year,0,2]
         ds.variables['max_val1'][year] = data[:,:,year,0,4]
-        print(data[:,:,year,1,0])
         ds.variables['date_start2'][year] = data[:,:,year,1,0]
         ds.variables['date_max2'][year] = data[:,:,year,1,3]
         ds.variables['date_end2'][year] = data[:,:,year,1,1]
@@ -695,7 +757,7 @@ def write_to_output_netcdf(data, total_blooms=None, probability=None):
             ds.variables['total_blooms'][year] = total_blooms[:,:,year]
         if probability is not None:
             ds.variables['probability'][:] = probability
-    print(ds.variables['TIME'][:])
+    print("wrote ", len(ds.variables['TIME'][:]), "years of data")
     ds.close()
 
 
@@ -725,7 +787,9 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     print(int((chl_data.shape[0] -start_date) // date_seperation_per_year))
     total_blooms = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int((chl_data.shape[0] -start_date) // date_seperation_per_year)))
     year_true_start_end_array.fill(FILL_VAL)
+    blooms_by_date = year_true_start_end_array.copy()
     total_blooms.fill(FILL_VAL)
+    total_blooms_date = total_blooms.copy()
     print("doing sst initiations and correction")
     for ix, iy in tqdm.tqdm(numpy.ndindex(chl_data.shape[2], chl_data.shape[3]), total=(chl_data.shape[2] * chl_data.shape[3])):
         try:
@@ -734,10 +798,12 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
                 print(ix,iy)
                 verbose = True
             else:
-                continue
+                pass
             results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=verbose, start_date=start_date, reference_date=reference_index)
             year_true_start_end_array[ix,iy] = results[0]
             total_blooms[ix,iy] = results[1]
+            blooms_by_date[ix, iy] = results[2]
+            total_blooms_date[ix,iy] = results[3]
             if verbose:
                 print("end duration array")
                 print(year_true_start_end_array[ix,iy])
@@ -751,12 +817,15 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
             print(completion_points.index(ix) * 10, "% complete")
         """
     
+    print(total_blooms.shape)
     probability_array = numpy.apply_along_axis(total_blooms_to_probability, 2, total_blooms)
+    probability_array_date = numpy.apply_along_axis(total_blooms_to_probability, 2, total_blooms_date)
 
     print("done sst initiations and correction")
     print("writing to netcdf")
     #needs to be extended to be able to output 3 files: sorted by calendar year, one with primary and secondary chloropjhyll maximum
     write_to_output_netcdf(year_true_start_end_array, total_blooms=total_blooms, probability=probability_array)
+    write_to_output_netcdf(blooms_by_date, total_blooms=total_blooms_date, probability=probability_array_date, date=True)
 
     
 def extend_array(array_like, entries_per_year, start_date=0):
@@ -771,7 +840,6 @@ def extend_array(array_like, entries_per_year, start_date=0):
     #stick em together
     output = numpy.concatenate([first_entry, array_like, last_entry], axis = 0)
     return output, start_date + entries_per_year
-
 
 
 if __name__ == "__main__":
@@ -912,8 +980,8 @@ if __name__ == "__main__":
         
         print("creating output netcdf {}".format(output))
         #simple regridding
-        print(chl_shape)
-        create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output)
+        create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_maxval.nc"))
+        create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_date.nc"), date=True)
         print("using start date",start_date)
         get_multi_year_two_blooms_output(numpy_storage,
                                         chl_shape,

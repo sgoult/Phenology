@@ -28,6 +28,7 @@ USE_DTYPE = "float64"
 
 output_location = None
 output_location_date = None
+median_output_name = None
 
 """
 Solar zenith stuff taken from jad
@@ -598,7 +599,11 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
         print("median value: {}".format(med5))
         print("median threshold: {}".format(median_threshold))
 
-    ods = nc.Dataset(os.path.join(numpy_storage,"median_output_{}.nc".format(datetime.datetime.now().strftime("%H%M"))), "w")
+    global median_output_name
+
+    median_output_name = os.path.join("median_output_{}.nc".format(datetime.datetime.now().strftime("%H%M")))
+
+    ods = nc.Dataset(median_output_name, "w")
     ods.createDimension('LATITUDE', chl_lats.shape[0])
     ods.createDimension('LONGITUDE', chl_lons.shape[0])
     ods.createDimension('TIME', 1)
@@ -724,7 +729,9 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.createVariable('total_blooms', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
     ds.variables['total_blooms'].setncattr("units", "observations")
     ds.createVariable('probability', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL)
-    ds.variables['total_blooms'].setncattr("units", "likelihood")
+    ds.variables['probability'].setncattr("units", "likelihood")
+    ds.createVariable('median_chlorophyll', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL)
+    ds.variables['median_chlorophyll'].setncattr("units", "mg chl m^3")
     ds.close()
     print("created netcdf {}".format(name))
 
@@ -757,6 +764,9 @@ def write_to_output_netcdf(data, total_blooms=None, probability=None, date=False
             ds.variables['total_blooms'][year] = total_blooms[:,:,year]
         if probability is not None:
             ds.variables['probability'][:] = probability
+        if os.path.exists(median_output_name):
+            median_ds = nc.Dataset(median_output_name)
+            ds.variables['median_chlorophyll'][:] = median_ds['median'][:]
     print("wrote ", len(ds.variables['TIME'][:]), "years of data")
     ds.close()
 

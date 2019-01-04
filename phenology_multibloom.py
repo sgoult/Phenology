@@ -501,7 +501,7 @@ def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     if not skip:
         print("smoothing sst")
         #print(sst_array[:20,:,100,281])
-        print(sst_array[:5,:,100,281])
+        #print(sst_array[:5,:,100,281])
         sst_boxcar = numpy.apply_along_axis(lambda m: numpy.convolve(m, numpy.ones(8)/8, mode='valid'), axis=0, arr=sst_array)
         print("shape after sst sbx")
         print(sst_boxcar.shape)
@@ -872,6 +872,8 @@ if __name__ == "__main__":
         numpy_storage = tempfile.mkdtemp(prefix="phenology_")
     else:
         numpy_storage = args.intermediate_file_store
+        if os.path.exists(numpy_storage):
+            os.remove(numpy_storage)
         os.mkdir(numpy_storage)
     #remember to change median threshold to percentage!
     #reverse search should be ratio of 100 days so 5 days * 20 = 100 or 8 days * 12.5 (so 13) = 100 days

@@ -238,7 +238,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             print("array all -32616.30273438")
             print(array_like)
         #we can stop here, there's not point continuing with an empty array
-        return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year) if not x + date_seperation_per_year > chl_sbx_slice.shape[0]]
+        return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year) if not x + date_seperation_per_year > chl_sbx_slice.shape[0]],[[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year) if not x + date_seperation_per_year > chl_sbx_slice.shape[0]]
 
     #possibly resort and create new durations based on remaining dates
     #look for sign changes in sst or PAR data, indicating high/low SST or light periods
@@ -288,7 +288,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         elif len(lows) and not len(highs):
             highs = [0, len(array_like)]
         else:
-            return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year) if not x + date_seperation_per_year > chl_sbx_slice.shape[0]]
+            return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year) if not x + date_seperation_per_year > chl_sbx_slice.shape[0]],[[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year) if not x + date_seperation_per_year > chl_sbx_slice.shape[0]]
     except Exception as e:
         #triggered once, but was helpful to know what the contents were
         print(highs)
@@ -498,11 +498,12 @@ def prepare_sst_variables(sst_array, numpy_storage, skip=False):
     """
     Creates smoothed sst, currently has a large portion commented out as source file is already the centered derivative diff data.
     """
+    global debug_pixel
     #smoothed sst
     if not skip:
         print("smoothing sst")
-        #print(sst_array[:20,:,100,281])
-        #print(sst_array[:5,:,100,281])
+        #print(sst_array[:20,:,debug_pixel[0],debug_pixel[1]])
+        print(sst_array[:5,:,debug_pixel[0],debug_pixel[1]])
         sst_boxcar = numpy.apply_along_axis(lambda m: numpy.convolve(m, numpy.ones(8)/8, mode='valid'), axis=0, arr=sst_array)
         print("shape after sst sbx")
         print(sst_boxcar.shape)
@@ -534,7 +535,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     Creates the smoothed anomaly chlorophyll data, saves a file to the temporary directory that is read as a mem map later to conserve resources.
     """
     #median * 1.05
-    
+    global debug_pixel
     #! here i would prefer we output the media value (without adding 5% to it)
     
     #TODO insert the solar zenith angle establishment, only if handed a modelled input (so add flag for --modelled-input)
@@ -628,7 +629,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     #get anomalies
     print("anomaly")
     anomaly = chl_array - (med5*median_threshold)
-    print(anomaly[:5,:,100,281])
+    print(anomaly[:5,:,debug_pixel[0],debug_pixel[1]])
     anomaly_map = numpy.memmap(os.path.join(numpy_storage, "chl_anomaly"), mode="w+", shape=anomaly.shape, dtype=USE_DTYPE)
     anomaly_map[:] = anomaly[:]
     #anomaly = anomaly_map
@@ -639,7 +640,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     #get cumsum of anomalies
     print("chl cumsum")
     chl_cumsum = numpy.ma.cumsum(anomaly,axis=0)
-    print(chl_cumsum[:5,:,100,281])
+    print(chl_cumsum[:5,:,debug_pixel[0],debug_pixel[1]])
     chl_cumsum_map = numpy.memmap(os.path.join(numpy_storage, "chl_cumsum"), mode="w+", shape=chl_cumsum.shape, dtype=USE_DTYPE)
     chl_cumsum_map[:] = chl_cumsum[:]
     #chl_cumsum = chl_cumsum_map
@@ -649,7 +650,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     #get centered derivative        
     print("chl der")
     chl_der = numpy.apply_along_axis(centered_diff_derivative, 0, chl_cumsum)
-    print(chl_der[:5,:,100,281])
+    print(chl_der[:5,:,debug_pixel[0],debug_pixel[1]])
     chl_der_map = numpy.memmap(os.path.join(numpy_storage, "chl_der"), mode="w+", shape=chl_der.shape, dtype=USE_DTYPE)
     chl_der_map[:] = chl_der[:]
     #chl_der = chl_der_map
@@ -660,7 +661,7 @@ def prepare_chl_variables(chl_array, numpy_storage, date_seperation, chl_lats, c
     #boxcar filter with width of 3 (sbx) should be something like this:
     print("chl sbx")
     chl_boxcar = numpy.apply_along_axis(lambda m: numpy.convolve(m, numpy.ones(3)/3, mode='full'), axis=0, arr=chl_der)
-    print(chl_boxcar[:5,:,100,281])
+    print(chl_boxcar[:5,:,debug_pixel[0],debug_pixel[1]])
     fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,chl_boxcar.shape[2],chl_boxcar.shape[3])), mask=numpy.ones((1,1,chl_boxcar.shape[2],chl_boxcar.shape[3])))
     print("chl shape after boxcar")
     print(chl_boxcar.shape)
@@ -804,7 +805,7 @@ def get_multi_year_two_blooms_output(numpy_storage, chl_shape, chl_dtype, chl_da
     for ix, iy in tqdm.tqdm(numpy.ndindex(chl_data.shape[2], chl_data.shape[3]), total=(chl_data.shape[2] * chl_data.shape[3])):
         try:
             verbose=False
-            if iy == args.debug_pixel[0] and ix == args.debug_pixel[1]:
+            if iy == debug_pixel[0] and ix == debug_pixel[1]:
                 print(ix,iy)
                 verbose = True
             else:
@@ -873,7 +874,7 @@ if __name__ == "__main__":
     parser.add_argument("--extend_chl_data", default=False, action="store_true", help="extends chlorophyll by copying the (central) chl array to the year previous and year next")
     parser.add_argument("--extend_sst_data", default=False, action="store_true", help="extends sea surfaace temperature by copying the (central) chl array to the year previous and year next")
     parser.add_argument("--start_year", default=0, help="What year to use as the start point for metadata output, if not specified will use 0, affects no processing.")
-    parser.add_argument("--debug_pixel",  nargs='+', default=[143,112], type=int, help="pixle in x, y (lat, lon), these entries are 0 indexed.")
+    parser.add_argument("--debug_pixel",  nargs='+', default=None, type=int, help="pixle in x, y (lat, lon), these entries are 0 indexed.")
     parser.add_argument("--reshape", default=False, action="store_true", help="reshape to be t, 1, x, y")
     parser.add_argument("--reshape_sst", default=False, action="store_true", help="reshape to be t, 1, x, y")
     args = parser.parse_args()
@@ -909,34 +910,6 @@ if __name__ == "__main__":
 
     #TODO list of files or file specified (mid november)
     for chl_location in args.chl_location:
-        if args.sst_location:
-            print("sst file provided, reading array")
-            print("only one file found, assuming full stack of observations")
-            sst_ds = nc.Dataset(args.sst_location)
-            sst_variable = [x for x in sst_ds.variables if args.sst_var in x.lower()][0]
-            try:
-                sst_lon_var = [x for x in sst_ds.variables if "lon" in x.lower()][0]
-                sst_lat_var = [x for x in sst_ds.variables if "lat" in x.lower()][0]
-            except:
-                print("trying to get lat/lon from standard name")
-                for va in sst_ds.variables:
-                    if "standard_name" in sst_ds.variables[va].__dict__.keys():
-                        if sst_ds.variables[va].__dict__["standard_name"] == "latitude":
-                            sst_lat_var= va
-                        elif sst_ds.variables[va].__dict__["standard_name"] == "longitude":
-                            sst_lon_var = va
-            sst_lons = sst_ds.variables[sst_lon_var][:]
-            sst_lats = sst_ds.variables[sst_lat_var][:]
-            sst_array = sst_ds.variables[sst_variable][:]
-            if args.extend_sst_data:
-                sst_array, _ = extend_array(sst_array, date_seperation_per_year, start_date)
-            if args.reshape_sst:
-                sst_array.shape = (sst_array.shape[0], 1, sst_lats.shape[0], sst_lons.shape[0])
-            sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
-            print("sst_shape: {}".format(sst_shape))
-            print("sst_dtype: {}".format(USE_DTYPE))
-            sst_array = None
-
         chl_files = chl_location
         print("calculating on {}".format(chl_files))
         chl_filename = chl_location
@@ -961,8 +934,44 @@ if __name__ == "__main__":
 
         #check if there are any nans in the data
         chl_array = numpy.ma.masked_invalid(chl_array)
+        print(chl_lats.shape[0])
+        debug_pixel = args.debug_pixel if args.debug_pixel else [int(chl_lats.shape[0] * 0.45), int(chl_lons.shape[0] * 0.45)]
+        print("using debug pixel:", debug_pixel, " which equates to:", chl_lats[debug_pixel[1]], "N", chl_lons[debug_pixel[0]], "E", "(zero indexed so you may need to add 1 to get reference in other software)")
+        debug_pixel = debug_pixel if LON_IDX > LAT_IDX else [debug_pixel[1], debug_pixel[0]]
 
-        print("using debug pixel:", args.debug_pixel, " which equates to:", chl_lats[args.debug_pixel[1]], "N", chl_lons[args.debug_pixel[0]], "E", "(zero indexed so you may need to add 1 to get reference in other software)")
+        if args.sst_location:
+            print("sst file provided, reading array")
+            print("only one file found, assuming full stack of observations")
+            sst_ds = nc.Dataset(args.sst_location)
+            sst_variable = [x for x in sst_ds.variables if args.sst_var in x.lower()][0]
+            try:
+                sst_lon_var = [x for x in sst_ds.variables if "lon" in x.lower()][0]
+                sst_lat_var = [x for x in sst_ds.variables if "lat" in x.lower()][0]
+            except:
+                print("trying to get lat/lon from standard name")
+                for va in sst_ds.variables:
+                    if "standard_name" in sst_ds.variables[va].__dict__.keys():
+                        if sst_ds.variables[va].__dict__["standard_name"] == "latitude":
+                            sst_lat_var= va
+                        elif sst_ds.variables[va].__dict__["standard_name"] == "longitude":
+                            sst_lon_var = va
+            sst_lons = sst_ds.variables[sst_lon_var][:]
+            sst_lats = sst_ds.variables[sst_lat_var][:]
+            SST_LAT_IDX = sst_ds.variables[sst_variable].dimensions.index(sst_lat_var)
+            SST_LON_IDX = sst_ds.variables[sst_variable].dimensions.index(sst_lon_var)
+            sst_array = sst_ds.variables[sst_variable][:]
+
+            if SST_LAT_IDX != LAT_IDX:
+                pass
+
+            if args.extend_sst_data:
+                sst_array, _ = extend_array(sst_array, date_seperation_per_year, start_date)
+            if args.reshape_sst:
+                sst_array.shape = (sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])
+            sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
+            print("sst_shape: {}".format(sst_shape))
+            print("sst_dtype: {}".format(USE_DTYPE))
+            sst_array = None
 
         """
         if not (chl_array.shape[2] == chl_lats.shape[0] and chl_array.shape[3] == chl_lons.shape[0]):

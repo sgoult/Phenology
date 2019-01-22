@@ -867,7 +867,7 @@ if __name__ == "__main__":
     parser.add_argument("--intermediate_file_store", help="change where intermediate numpy files are placed, if not specified then /tmp is assumed - you should specify somewhere else if your tmp cannot handle the array sizes needed (and currently this program will fill it until it cannot).", required=False)
     parser.add_argument("--reverse_search", default=False, help="specify the number of observations to search in the previous year, if not specified will be calculated as a representation of 100 days (date_seperation_per_year / 0.27).", required=False)
     parser.add_argument("--skip_sst_prep", action="store_true", default=False, help="skip sst preparation, instead the program will assume that the sst input is already in a state where low/high period fluctuation can be identified", required=False)
-    parser.add_argument("--median_threshold", default=MEDIAN_THRESHOLD_DEFAULT, help="change median threshold, set as percentage value e.g. 20 = 20%", required=False)
+    parser.add_argument("--median_threshold", default=MEDIAN_THRESHOLD_DEFAULT, help="change median threshold, set as percentage value e.g. 20 = 20", required=False)
     parser.add_argument("--modelled_median", action='store_true',default=False, help="test for solar zenith of inputs", required=False)
     #probably needs a better description!
     #give options for both since we might end up in a situation where sst is 3 years and chl is one year (or vice versa)
@@ -877,6 +877,9 @@ if __name__ == "__main__":
     parser.add_argument("--debug_pixel",  nargs='+', default=None, type=int, help="pixle in x, y (lat, lon), these entries are 0 indexed.")
     parser.add_argument("--reshape", default=False, action="store_true", help="reshape to be t, 1, x, y")
     parser.add_argument("--reshape_sst", default=False, action="store_true", help="reshape to be t, 1, x, y")
+    parser.add_argument("--sst_start_index", type=int, default=0)
+    parser.add_argument("--sst_end_index", type=int, default=-1)
+    parser.add_argument("--chl_begin_date", default=None, help="date relating to index 0 of a file in format dd/mm/yyyy")
     args = parser.parse_args()
     med_thresh = 1+ (float(args.median_threshold) / 100)
     if not args.intermediate_file_store:
@@ -902,12 +905,6 @@ if __name__ == "__main__":
         print("reference index is too great and would result in mostly or all negative values.")
         sys.exit()
 
-    mon_index = int((start_date + ref_index) // (date_seperation_per_year / 12))
-    print(mon_index)
-    REF_MONTH = calendar.month_name[mon_index]
-    print("reference month (central):", REF_MONTH)
-    START_YEAR = args.start_year
-
     #TODO list of files or file specified (mid november)
     for chl_location in args.chl_location:
         chl_files = chl_location
@@ -918,6 +915,28 @@ if __name__ == "__main__":
         chl_variable = [x for x in chl_ds.variables if args.chl_var in x.lower()][0]
         chl_lon_var = [x for x in chl_ds.variables if "lon" in x.lower()][0]
         chl_lat_var = [x for x in chl_ds.variables if "lat" in x.lower()][0]
+        chl_time_var = [x for x in chl_ds.variables if "time" in x.lower()][0]
+        time_of_run = datetime.datetime.now().strftime("%H%M")
+        try:
+            if not args.chl_begin_date:
+                dts = nc.num2date(chl_ds[chl_time_var][:], chl_ds[chl_time_var].units)
+                ref_date = dts[start_date+ref_index]
+                start_datetime = dts[start_date]
+            else:
+                init_date = datetime.datetime.strptime(args.chl_begin_date, '%d/%m/%Y')
+                start_datetime = init_date + datetime.timedelta(days=(365 * (start_date / date_seperation_per_year)))
+                ref_date = start_datetime + datetime.timedelta(days=(365 * (ref_index / date_seperation_per_year)))
+            print(ref_date)
+            REF_MONTH = calendar.month_name[ref_date.month]
+            START_YEAR = start_datetime.year
+            print("reference date selected: "+ref_date.strftime("%d/%m/%Y"))
+            print("start date selected: "+start_datetime.strftime("%d/%m/%Y"))
+            print("reference month: "+ REF_MONTH)
+            print("start year: "+str(START_YEAR))
+        except Exception as e:
+            print(e)
+            print("could not identify chlorophyll start date, please specify the first date you expect in the file (time index 0, not first date index) with --chl_begin_date e.g. --chl_begin_date 01/01/1997")
+            sys.exit()
         chl_lons = chl_ds.variables[chl_lon_var][:]
         chl_lats = chl_ds.variables[chl_lat_var][:]
         print("lats shape",chl_lats.shape)
@@ -928,89 +947,108 @@ if __name__ == "__main__":
             DIM_ORDER = ['TIME', 'DEPTH', 'LONGITUDE', 'LATITUDE']
         else:
             DIM_ORDER = ['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE']
-        chl_array = chl_ds.variables[chl_variable][:]
-        if args.reshape:
-            chl_array.shape = (chl_array.shape[0], 1, chl_array.shape[1], chl_array.shape[2])
-
-        #check if there are any nans in the data
-        chl_array = numpy.ma.masked_invalid(chl_array)
-        print(chl_lats.shape[0])
-        debug_pixel = args.debug_pixel if args.debug_pixel else [int(chl_lats.shape[0] * 0.45), int(chl_lons.shape[0] * 0.45)]
-        print("using debug pixel:", debug_pixel, " which equates to:", chl_lats[debug_pixel[1]], "N", chl_lons[debug_pixel[0]], "E", "(zero indexed so you may need to add 1 to get reference in other software)")
-        debug_pixel = debug_pixel if LON_IDX > LAT_IDX else [debug_pixel[1], debug_pixel[0]]
-
-        if args.sst_location:
-            print("sst file provided, reading array")
-            print("only one file found, assuming full stack of observations")
-            sst_ds = nc.Dataset(args.sst_location)
-            sst_variable = [x for x in sst_ds.variables if args.sst_var in x.lower()][0]
-            try:
-                sst_lon_var = [x for x in sst_ds.variables if "lon" in x.lower()][0]
-                sst_lat_var = [x for x in sst_ds.variables if "lat" in x.lower()][0]
-            except:
-                print("trying to get lat/lon from standard name")
-                for va in sst_ds.variables:
-                    if "standard_name" in sst_ds.variables[va].__dict__.keys():
-                        if sst_ds.variables[va].__dict__["standard_name"] == "latitude":
-                            sst_lat_var= va
-                        elif sst_ds.variables[va].__dict__["standard_name"] == "longitude":
-                            sst_lon_var = va
-            sst_lons = sst_ds.variables[sst_lon_var][:]
-            sst_lats = sst_ds.variables[sst_lat_var][:]
-            SST_LAT_IDX = sst_ds.variables[sst_variable].dimensions.index(sst_lat_var)
-            SST_LON_IDX = sst_ds.variables[sst_variable].dimensions.index(sst_lon_var)
-            sst_array = sst_ds.variables[sst_variable][:]
-
-            if SST_LAT_IDX != LAT_IDX:
-                pass
-
-            if args.extend_sst_data:
-                sst_array, _ = extend_array(sst_array, date_seperation_per_year, start_date)
-            if args.reshape_sst:
-                sst_array.shape = (sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])
-            sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
-            print("sst_shape: {}".format(sst_shape))
-            print("sst_dtype: {}".format(USE_DTYPE))
-            sst_array = None
-
-        """
-        if not (chl_array.shape[2] == chl_lats.shape[0] and chl_array.shape[3] == chl_lons.shape[0]):
-            print("adjusting to flip lat and lon")
-            chl_array.shape = (chl_array.shape[0], chl_array.shape[1], chl_array.shape[3], chl_array.shape[2])
-        """
-        if args.extend_chl_data:
-            chl_array, start_date = extend_array(chl_array, date_seperation_per_year, start_date)
-
-        chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage, date_seperation_per_year, chl_lats, chl_lons, do_model_med=args.modelled_median, median_threshold=med_thresh)
-        print("chl_shape: {}".format(chl_shape))
-        print("chl_dtype: {}".format(USE_DTYPE))
-
-        if sst_shape[2:] != chl_shape[2:]:
-            print("sst and chlorophyll x,y array shapes do not match got:")
-            print("chlorophyll:",chl_shape[2:])
-            print("sst:",sst_shape[2:])
-            print("quitting!")
-            sys.exit()
-
-        #TODO set dynamically
-
-        if args.output:
-            output = args.output
-        else:
-            output = chl_filename.replace(".nc", "_phenology_{}.nc".format(datetime.datetime.now().strftime("%H%M")))
+        print("done with dimensions")
         
-        print("creating output netcdf {}".format(output))
-        #simple regridding
-        create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_maxval.nc"))
-        create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_date.nc"), date=True)
-        print("using start date",start_date)
-        get_multi_year_two_blooms_output(numpy_storage,
-                                        chl_shape,
-                                        chl_dtype, 
-                                        chl_array, 
-                                        sst_shape, 
-                                        sst_dtype, 
-                                        date_seperation_per_year=date_seperation_per_year, 
-                                        start_date=start_date, 
-                                        reverse_search=reverse_search,
-                                        reference_index=ref_index)
+        print("getting chunks")
+        chunks = [(x, y) for x in zip(list(range(1,chl_lons.shape[0], 400)),list(range(500,chl_lons.shape[0], 400))+ [chl_lons.shape[0]]) for y in zip(list(range(1, chl_lats.shape[0], 400)), list(range(400, chl_lats.shape[0], 400)) + [chl_lats.shape[0]])]
+        print("done chunks")
+        for chunk_idx, chunk in enumerate(chunks):
+            slc = [slice(None)] * len(chl_ds.variables[chl_variable].shape)
+            x,y = chunk
+            y[0] = y[0] if y[0] != 1 else 0
+            x[0] = x[0] if x[0] != 1 else 0
+            slc[LON_IDX] = slice(x[0], x[1])
+            slc[LAT_IDX] = slice(y[0], y[1])
+
+
+            chl_array = chl_ds.variables[chl_variable][slc]
+            chl_lons = chl_ds.variables[chl_lon_var][x[0]:x[1]]
+            chl_lats = chl_ds.variables[chl_lat_var][y[0]:y[1]]
+            if args.reshape:
+                chl_array.shape = (chl_array.shape[0], 1, chl_array.shape[1], chl_array.shape[2])
+
+            #check if there are any nans in the data
+            chl_array = numpy.ma.masked_invalid(chl_array)
+            print(chl_lats.shape[0])
+            debug_pixel = args.debug_pixel if args.debug_pixel else [int(chl_lats.shape[0] * 0.45), int(chl_lons.shape[0] * 0.45)]
+            print("using debug pixel:", debug_pixel, " which equates to:", chl_lats[debug_pixel[1]], "N", chl_lons[debug_pixel[0]], "E", "(zero indexed so you may need to add 1 to get reference in other software)")
+            debug_pixel = debug_pixel if LON_IDX > LAT_IDX else [debug_pixel[1], debug_pixel[0]]
+
+            if args.sst_location:
+                print("sst file provided, reading array")
+                print("only one file found, assuming full stack of observations")
+                sst_ds = nc.Dataset(args.sst_location)
+                sst_variable = [x for x in sst_ds.variables if args.sst_var in x.lower()][0]
+                try:
+                    sst_lon_var = [x for x in sst_ds.variables if "lon" in x.lower()][0]
+                    sst_lat_var = [x for x in sst_ds.variables if "lat" in x.lower()][0]
+                    sst_time_var = [x for x in sst_ds.variables if "time" in x.lower()][0]
+                except:
+                    print("trying to get lat/lon from standard name")
+                    for va in sst_ds.variables:
+                        if "standard_name" in sst_ds.variables[va].__dict__.keys():
+                            if sst_ds.variables[va].__dict__["standard_name"] == "latitude":
+                                sst_lat_var= va
+                            elif sst_ds.variables[va].__dict__["standard_name"] == "longitude":
+                                sst_lon_var = va
+                sst_lons = sst_ds.variables[sst_lon_var][:]
+                sst_lats = sst_ds.variables[sst_lat_var][:]
+                SST_LAT_IDX = sst_ds.variables[sst_variable].dimensions.index(sst_lat_var)
+                SST_LON_IDX = sst_ds.variables[sst_variable].dimensions.index(sst_lon_var)
+                SST_TIME_IDX = sst_ds.variables[sst_variable].dimensions.index(sst_time_var)
+                sst_slc = [slice(None)] * len(sst_ds.variables[sst_variable].shape)
+                sst_slc[SST_LON_IDX] = slice(x[0], x[1])
+                sst_slc[SST_LAT_IDX] = slice(y[0], y[1])
+                sst_slc[SST_TIME_IDX] = slice(args.sst_start_index, args.sst_end_index)
+                sst_array = sst_ds.variables[sst_variable][sst_slc]
+
+                if SST_LAT_IDX != LAT_IDX:
+                    pass
+
+                if args.extend_sst_data:
+                    sst_array, _ = extend_array(sst_array, date_seperation_per_year, start_date)
+                if args.reshape_sst:
+                    sst_array.shape = (sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])
+                sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, skip=args.skip_sst_prep)
+                print("sst_shape: {}".format(sst_shape))
+                print("sst_dtype: {}".format(USE_DTYPE))
+                sst_array = None
+
+            """
+            if not (chl_array.shape[2] == chl_lats.shape[0] and chl_array.shape[3] == chl_lons.shape[0]):
+                print("adjusting to flip lat and lon")
+                chl_array.shape = (chl_array.shape[0], chl_array.shape[1], chl_array.shape[3], chl_array.shape[2])
+            """
+            if args.extend_chl_data:
+                chl_array, start_date = extend_array(chl_array, date_seperation_per_year, start_date)
+
+            chl_shape, chl_dtype = prepare_chl_variables(chl_array, numpy_storage, date_seperation_per_year, chl_lats, chl_lons, do_model_med=args.modelled_median, median_threshold=med_thresh)
+            print("chl_shape: {}".format(chl_shape))
+            print("chl_dtype: {}".format(USE_DTYPE))
+
+            if sst_shape[2:] != chl_shape[2:]:
+                print("sst and chlorophyll x,y array shapes do not match got:")
+                print("chlorophyll:",chl_shape[2:])
+                print("sst:",sst_shape[2:])
+                print("quitting!")
+                sys.exit()
+
+            #TODO set dynamically
+
+            output = chl_filename.replace(".nc", "_phenology_{}_chunk{}.nc".format(time_of_run, chunk_idx))
+            
+            print("creating output netcdf {}".format(output))
+            #simple regridding
+            create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_maxval.nc"))
+            create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_date.nc"), date=True)
+            print("using start date",start_date)
+            get_multi_year_two_blooms_output(numpy_storage,
+                                            chl_shape,
+                                            chl_dtype, 
+                                            chl_array, 
+                                            sst_shape, 
+                                            sst_dtype, 
+                                            date_seperation_per_year=date_seperation_per_year, 
+                                            start_date=start_date, 
+                                            reverse_search=reverse_search,
+                                            reference_index=ref_index)

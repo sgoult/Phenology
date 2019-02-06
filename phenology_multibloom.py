@@ -38,6 +38,8 @@ logging.basicConfig()
 logger = logging.getLogger("phenology_logger")
 logger.setLevel(logging.DEBUG)
 
+
+
 numpy_storage=None
 
 """
@@ -107,16 +109,16 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
         zero_crossings = []
     true_poss = zero_crossings
 
-    logging.debug("chl sbx for current period")
-    logging.debug(array_like)
-    logging.debug("zero crossings in chl sbx")
-    logging.debug(zero_crossings)
+    logger.debug("chl sbx for current period")
+    logger.debug(array_like)
+    logger.debug("zero crossings in chl sbx")
+    logger.debug(zero_crossings)
 
     
     """
     if not first_real_val in zero_crossings:
-        logging.debug(first_real_val)
-        logging.debug(array_like[first_real_val])
+        logger.debug(first_real_val)
+        logger.debug(array_like[first_real_val])
         zero_crossings = [first_real_val] + zero_crossings
         zero_crossings.sort()
     """
@@ -171,10 +173,10 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
 
 
 
-    logging.debug("starts and ends")
-    logging.debug("durations: {}".format(durations))
-    logging.debug("starts: {}".format(starts))
-    logging.debug("ends: {}".format(ends))
+    logger.debug("starts and ends")
+    logger.debug("durations: {}".format(durations))
+    logger.debug("starts: {}".format(starts))
+    logger.debug("ends: {}".format(ends))
 
     #find an end for every start
     dates = []
@@ -192,10 +194,10 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
            max_idx = None
         except ValueError:
             if chl_values[start:end + 1]:
-                logging.debug("val error encountered at max estimation, sequence was:")
-                logging.debug(chl_values[start:end + 1])
-                logging.debug("start end")
-                logging.debug(start, end)
+                logger.debug("val error encountered at max estimation, sequence was:")
+                logger.debug(chl_values[start:end + 1])
+                logger.debug("start end")
+                logger.debug(start, end)
             continue
         except StopIteration:
             continue
@@ -207,14 +209,14 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
         for pad in range(len(dates), depth):
             dates.append([None,None,None,None,None])
 
-    logging.debug("end dates")
-    logging.debug(dates)
+    logger.debug("end dates")
+    logger.debug(dates)
 
-    logging.debug("maxes")
-    logging.debug([x[4] for x in dates])
+    logger.debug("maxes")
+    logger.debug([x[4] for x in dates])
 
-    logging.debug("tmaxes")
-    logging.debug([x[3] for x in dates])
+    logger.debug("tmaxes")
+    logger.debug([x[3] for x in dates])
     return dates
 
 def phen_records_to_one_val_on_max(records, date_correction=False, index=4,verbose=False):
@@ -262,10 +264,10 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     chl_sbx_slice = numpy.squeeze(chl_sbx_slice)
     zero_crossings = numpy.where(polaritiser(array_like.astype(numpy.float)))[0]
 
-    logging.debug("sst values for pixel")
-    logging.debug(array_like)
-    logging.debug("zero crossings of sst for pixel")
-    logging.debug(zero_crossings)
+    logger.debug("sst values for pixel")
+    logger.debug(array_like)
+    logger.debug("zero crossings of sst for pixel")
+    logger.debug(zero_crossings)
 
     #find out which way we're going
     highs = []
@@ -273,11 +275,17 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     highs = [x for x in zero_crossings if array_like[x] < 0]
     lows = [x for x in zero_crossings if array_like[x] > 0]
     
-    #logging.debug(everything thus far
-    logging.debug("***********************")
-    logging.debug("starts of high and low periods")
-    logging.debug("highs: {}".format(*highs))
-    logging.debug("lows: {}".format(*lows))
+    #logger.debug(everything thus far
+    logger.debug("***********************")
+    logger.debug("starts of high and low periods")
+    if highs:
+        logger.debug("highs: {}".format(*highs))
+    else:
+        logger.debug("no highs found!")
+    if lows:
+        logger.debug("lows: {}".format(*lows))
+    else:
+        logger.debug("no lows found!")
     maximum_sst = []
     activity_period = None
     try:
@@ -309,9 +317,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         logger.error(e)
 
     #chuck out the results
-    logging.debug("updated highs and lows after filtering and correcting for missing dates")
-    logging.debug("highs: {}".format(*highs))
-    logging.debug("lows: {}".format(*lows))
+    logger.debug("updated highs and lows after filtering and correcting for missing dates")
+    logger.debug("highs: {}".format(*highs))
+    logger.debug("lows: {}".format(*lows))
 
     period_chl_phenology = get_start_index_and_duration(chl_sbx_slice,chl_slice,0,depth=5,verbose=verbose)
 
@@ -336,8 +344,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #each low/high period is treated as a seperate entity, so we can look forward and backward in time without worrying too much about the overlap
         pad = int(round((end_date - index) * 0.20))
         #pad = 0
-        logging.debug("running bloom detection for period: {} {}".format(index, end_date))
-        logging.debug("this is a {}".format("high" if activity_period else "low", "period"))
+        logger.debug("running bloom detection for period: {} {}".format(index, end_date))
+        logger.debug("this is a {}".format("high" if activity_period else "low", "period"))
 
         if activity_period:
             high_records.extend([x for x in period_chl_phenology if x[3] > index and x[3] < end_date])
@@ -350,8 +358,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         end_date = int(round(end_date + pad))
         start = index - pad if index >= pad else index
         if verbose:
-            logging.debug("padding period with ", pad, "entries")
-            logging.debug("resultant dates (start, end): ", start, end_date)
+            logger.debug("padding period with ", pad, "entries")
+            logger.debug("resultant dates (start, end): ", start, end_date)
         chl_sbx_period_slice = chl_sbx_slice[start:end_date]
         chl_period_slice = chl_slice[start:end_date]
         #get the phenology for this period, depth pads extra data if needed for numpy (we don't use this for SST model)
@@ -407,32 +415,32 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         high_blooms = possible_high_blooms    
         low_blooms = possible_low_blooms
 
-        logging.debug("working on year: {}".format(year))
-        logging.debug("found {} high blooms".format(len(possible_high_blooms)))
-        logging.debug("found {} low blooms".format(len(possible_low_blooms)))
+        logger.debug("working on year: {}".format(year))
+        logger.debug("found {} high blooms".format(len(possible_high_blooms)))
+        logger.debug("found {} low blooms".format(len(possible_low_blooms)))
         
-        logging.debug("highs")
-        logging.debug(high_blooms)
-        logging.debug("lows")
-        logging.debug(low_blooms)
+        logger.debug("highs")
+        logger.debug(high_blooms)
+        logger.debug("lows")
+        logger.debug(low_blooms)
         #reduce them to one record
         #additionally look at using max vs duration for the bloom selection
         low = phen_records_to_one_val_on_max(low_blooms, year + reference_date)
         high = phen_records_to_one_val_on_max(high_blooms, year + reference_date)
         if not low or not high:
-            logging.debug("***************")
-            logging.debug(high_records)
-            logging.debug(low_records)
-            logging.debug(year - reverse_search)
-            logging.debug(possible_high_blooms)
-            logging.debug(possible_low_blooms)
-            logging.debug(low, high)
+            logger.debug("***************")
+            logger.debug(high_records)
+            logger.debug(low_records)
+            logger.debug(year - reverse_search)
+            logger.debug(possible_high_blooms)
+            logger.debug(possible_low_blooms)
+            logger.debug(low, high)
         #spit out the low period and high period for this year
         #
-        logging.debug("high bloom")
-        logging.debug(high)
-        logging.debug("low bloom")
-        logging.debug(low)
+        logger.debug("high bloom")
+        logger.debug(high)
+        logger.debug("low bloom")
+        logger.debug(low)
         high_val = high[4] if high[4] else -1000
         low_val = low[4] if low[4] else -1000
         if low_val > high_val:
@@ -743,6 +751,8 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.variables['probability'].setncattr("units", "likelihood")
     ds.createVariable('median_chlorophyll', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL)
     ds.variables['median_chlorophyll'].setncattr("units", "mg chl m^3")
+    ds.setncattr("generation command", str(" ".join(sys.argv)))
+    ds.setncattr("run location", str(os.getcwd()))
     if isinstance(median, numpy.ndarray):
         ds.variables['median_chlorophyll'][:] = median
     ds.close()
@@ -864,22 +874,36 @@ def extend_array(array_like, entries_per_year, start_date=0):
     output = numpy.concatenate([first_entry, array_like, last_entry], axis = 0)
     return output, start_date + entries_per_year
 
-def multi_proc_init(c, s):
+def multi_proc_init(c, s, l):
     global sst_lock
     global chl_lock
+    global log_lock
     sst_lock = s
     chl_lock = c
+    log_lock = l
 
 def test_process_for_exception(result):
     print("results")
     print("result ", result)
 
 def chunk_by_chunk_handler(chunk_idx, chunk):
+    global default_logging
     try:
+        log = log_lock.acquire(block=False)
+        if log:
+            handler.setLevel(logging.DEBUG)
+            logger.debug("set logging to debug on filehandler")
+        logger.debug("processing chunk {} with bounds {}".format(chunk_idx, str(chunk)))
         chunk_by_chunk(chunk_idx, chunk)
+        if log:
+            log_lock.release()
+            handler.setLevel(default_logging)
+
     except Exception as e:
         traceback.print_exc()
-        print(e)
+        log_lock.release()
+        handler.setLevel(default_logging)
+        logger.error(e)
     raise e
 
 def chunk_by_chunk(chunk_idx, chunk):
@@ -942,6 +966,8 @@ def chunk_by_chunk(chunk_idx, chunk):
                         sst_lat_var= va
                     elif sst_ds.variables[va].__dict__["standard_name"] == "longitude":
                         sst_lon_var = va
+                    elif sst_ds.variables[va].__dict__["standard_name"] == "time":
+                        sst_time_var = va
         sst_lons = sst_ds.variables[sst_lon_var][:]
         sst_lats = sst_ds.variables[sst_lat_var][:]
         SST_LAT_IDX = sst_ds.variables[sst_variable].dimensions.index(sst_lat_var)
@@ -1031,8 +1057,25 @@ if __name__ == "__main__":
     parser.add_argument("--sst_start_index", type=int, default=0)
     parser.add_argument("--sst_end_index", type=int, default=-1)
     parser.add_argument("--chl_begin_date", default=None, help="date relating to index 0 of a file in format dd/mm/yyyy")
-    parser.add_argument("--no_thread", default=False, help="Don't use threading")
+    parser.add_argument("--no_thread", action='store_true', default=False, help="Don't use threading")
+    parser.add_argument("--no_logfile", action='store_true', default=False, help="Don't create a logfile")
     args = parser.parse_args()
+
+    time_of_run = datetime.datetime.now().strftime("%H%M")
+    if not args.no_logfile:
+        if len(args.chl_location) == 1:
+            handler = logging.FileHandler(args.chl_location[0].replace(".nc", "_phenology_{}.logfile".format(time_of_run)))
+            logger.info("initilised logfile at {}".format(args.chl_location[0].replace(".nc", "_phenology_{}.logfile".format(time_of_run))))
+        else:
+            handler = logging.FileHandler("phenology_bulk_run_{}.logfile".format(time_of_run))
+            logger.info("initilised logfile at {}".format("phenology_bulk_run_{}.logfile".format(time_of_run)))
+    else:
+        handler = logging.NullHandler()
+
+    handler.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
+    logger.info(" ".join(sys.argv))
+
     med_thresh = 1+ (float(args.median_threshold) / 100)
     if not args.intermediate_file_store:
         numpy_storage = tempfile.mkdtemp(prefix="phenology_")
@@ -1068,7 +1111,6 @@ if __name__ == "__main__":
         chl_lon_var = [x for x in chl_ds.variables if "lon" in x.lower()][0]
         chl_lat_var = [x for x in chl_ds.variables if "lat" in x.lower()][0]
         chl_time_var = [x for x in chl_ds.variables if "time" in x.lower()][0]
-        time_of_run = datetime.datetime.now().strftime("%H%M")
         try:
             if not args.chl_begin_date:
                 dts = nc.num2date(chl_ds[chl_time_var][:], chl_ds[chl_time_var].units)
@@ -1135,8 +1177,9 @@ if __name__ == "__main__":
             default_logging = logging.ERROR
         sst_lock_maj = multiprocessing.Lock()
         chl_lock_maj = multiprocessing.Lock()
+        log_info_lock_maj = multiprocessing.Lock()
         debug_chunk = 1
-        pool = multiprocessing.Pool(threads, initializer=multi_proc_init, initargs=(chl_lock_maj, sst_lock_maj))
+        pool = multiprocessing.Pool(threads, initializer=multi_proc_init, initargs=(chl_lock_maj, sst_lock_maj, log_info_lock_maj))
         #set this to be an early one
         res = pool.starmap_async(chunk_by_chunk_handler, [(chunk_idx, chunk) for chunk_idx, chunk in enumerate(chunks)], chunksize=1)
         with tqdm.tqdm(total=len(chunks)) as pbar:
@@ -1146,18 +1189,17 @@ if __name__ == "__main__":
                 time.sleep(1)
                 if res._number_left != last_known:
                     pbar.update(last_known - res._number_left)
-                    print(last_known, res._number_left)
                     last_known = res._number_left
                 if res._number_left <= 0 or last_known <= 0:
                     pbar.close()
                     running = False
                 pbar.refresh()
-            print(res._number_left)
-        print("pool finished")
+        logger.setLevel(logging.INFO)
+        logger.info("chunk processing finished, returned log level to info messages")
 
         final_output_maxval = chl_filename.replace(".nc", "_phenology_{}_by_maxval.nc".format(time_of_run))
         final_output_dates = chl_filename.replace(".nc", "_phenology_{}_by_date.nc".format(time_of_run))
-        
+        logger.info("saving reconstructed files to {}, {}".format(final_output_dates, final_output_maxval))
 
         chl_lon_var = [x for x in chl_ds.variables if "lon" in x.lower()][0]
         chl_lat_var = [x for x in chl_ds.variables if "lat" in x.lower()][0]
@@ -1172,15 +1214,15 @@ if __name__ == "__main__":
             date_chunk_file = [x for x in files if "chunk{}_".format(chunk_idx) in x and 'date' in x]
             #if we find the tile then add it in
             if len(maxval_chunk_file) and len(date_chunk_file):
-                print(maxval_chunk_file, date_chunk_file)
+                logger.info("processing chunk files: {}, {}".format(os.path.basename(maxval_chunk_file[0]), os.path.basename(date_chunk_file[0])))
                 maxval_ds = nc.Dataset(final_output_maxval, 'r+')
                 date_ds = nc.Dataset(final_output_dates, 'r+')
                 maxval_chunk = nc.Dataset(maxval_chunk_file[0], 'r')
                 date_chunk = nc.Dataset(date_chunk_file[0], 'r')
+                logger.info("Files read, preparing to write")
                 slc = [slice(None)] * 4
                 med_prob_slc = [slice(None)] * 3
                 x,y = chunk
-                print(x, y)
                 y = y if y[0] != 1 else (0, y[1])
                 x = x if x[0] != 1 else (0, x[1])
                 if LAT_IDX > LON_IDX:
@@ -1195,17 +1237,20 @@ if __name__ == "__main__":
                     med_prob_slc[1] = slice(y[0], y[1])
                 for var in [x for x in maxval_ds.variables.keys() if not x in maxval_ds.dimensions.keys() and x not in ['median_chlorophyll', 'probability']]:
                     maxval_ds[var][slc] = maxval_chunk[var][:]
-                    print(date_chunk[var][:])
                     date_ds[var][slc] = date_chunk[var][:]
                 for var in [x for x in maxval_ds.variables.keys() if x in ['median_chlorophyll', 'probability']]:
                     maxval_ds[var][med_prob_slc] = maxval_chunk[var][:]
                     date_ds[var][med_prob_slc] = date_chunk[var][:]
+                logger.info("Written, closing.")
                 maxval_ds.close()
                 date_ds.close()
                 maxval_chunk.close()
                 date_chunk.close()
+                logger.info("Removing chunk files.")
                 os.remove(maxval_chunk_file[0])
                 os.remove(date_chunk_file[0])
+
+        logger.info("complete!")
 
 
                 

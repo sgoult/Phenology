@@ -6,7 +6,7 @@ import dask
 
 netcdf_file = "/local0/sst_reshaped_new.nc"
 
-output = "/local0/sst_reshaped_new_8d_comp.nc"
+output = "/local0/sst_reshaped_new_5d_comp.nc"
 
 input_file = xarray.open_dataset(netcdf_file)
 years = set([int(f.dt.year) for f in input_file.sst.TIME])

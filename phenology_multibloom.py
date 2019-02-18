@@ -351,30 +351,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             high_records.extend([x for x in period_chl_phenology if x[3] > index and x[3] < end_date])
         else:
             low_records.extend([x for x in period_chl_phenology if x[3] > index and x[3] < end_date])
-
-
-        """
-        old stuff
-        end_date = int(round(end_date + pad))
-        start = index - pad if index >= pad else index
-        if verbose:
-            logger.debug("padding period with ", pad, "entries")
-            logger.debug("resultant dates (start, end): ", start, end_date)
-        chl_sbx_period_slice = chl_sbx_slice[start:end_date]
-        chl_period_slice = chl_slice[start:end_date]
-        #get the phenology for this period, depth pads extra data if needed for numpy (we don't use this for SST model)
-        #73% of time in function
-        #run this before then sort into high/low periods
-        period_chl_phenology = get_start_index_and_duration(chl_sbx_period_slice,chl_period_slice,start,depth=5,verbose=verbose)
-        #if we found anything
-        if len(period_chl_phenology):
-            #loop through them and add them to the high/low mega lists
-            for record in period_chl_phenology:
-                if activity_period:
-                    high_records.append(record)
-                else:
-                    low_records.append(record)
-        """
+        
+    logger.debug(high_records)
+    logger.debug(low_records)
     
     #to remind ourselves what the phenology records look like
     #[start,end,end-start,max_idx,chl_values[max_idx]]
@@ -383,7 +362,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     ngds_date = []
     total_blooms = []
     blooms_by_date = []
+    logger.debug("performing year filtering from {}".format(start_date))
     for year in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year):
+        logger.debug("doing year {}".format(year))
         if year + date_seperation_per_year > chl_sbx_slice.shape[0]:
             continue
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
@@ -391,6 +372,11 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #then this currently selects june - june, rather than january - december, is this correct? The central month 
         possible_high_blooms = [x for x in high_records if x[3] > (year) and x[3] < (year + date_seperation_per_year) and not x[0] < (year - date_seperation_per_year)]
         possible_low_blooms = [x for x in low_records if x[3] > (year) and x[3] < (year + date_seperation_per_year) and not x[0] < (year - date_seperation_per_year)]
+
+        logger.debug("possible_high_blooms")
+        logger.debug(possible_high_blooms)
+        logger.debug("possible_low_blooms")
+        logger.debug(possible_low_blooms)
 
         #filters out the blooms that might overlap
         high_removals = []
@@ -414,6 +400,12 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
         high_blooms = possible_high_blooms    
         low_blooms = possible_low_blooms
+
+        logger.debug("after filtering")
+        logger.debug("possible_high_blooms")
+        logger.debug(possible_high_blooms)
+        logger.debug("possible_low_blooms")
+        logger.debug(possible_low_blooms)
 
         logger.debug("working on year: {}".format(year))
         logger.debug("found {} high blooms".format(len(possible_high_blooms)))
@@ -508,6 +500,12 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             ngd = 0
         ngds.append(ngd)
         total_blooms.append(len(possible_high_blooms) + len(possible_low_blooms))
+    logger.debug((blooms, ngds, blooms_by_date, ngds_date, total_blooms))
+
+    [[None,None,None,None,None], [None,None,None,None,None]],
+    [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year) if not x + date_seperation_per_year > chl_sbx_slice.shape[0]],
+    [[None,None,None,None,None], [None,None,None,None,None]], 
+    [None for x in range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year) if not x + date_seperation_per_year > chl_sbx_slice.shape[0]]
     return blooms, ngds, blooms_by_date, ngds_date, total_blooms
 
 def prepare_sst_variables(sst_array, numpy_storage, chunk, skip=False):
@@ -615,6 +613,8 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
         med5 = numpy.ma.median(chl_array,axis = 0)
         logger.info("median value: {}".format(med5))
         logger.info("median threshold: {}".format(median_threshold))
+    
+    std_dev = numpy.std(chl_array, axis=0)
 
     """
     median_output_name = median_filename
@@ -695,9 +695,9 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
     chl_boxcar = chl_boxcar_map
     chl_boxcar_map = None
 
-    return chl_boxcar.shape, USE_DTYPE, med5
+    return chl_boxcar.shape, USE_DTYPE, med5, std_dev
 
-def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenology_{}.nc".format(datetime.datetime.now().strftime("%H%M")), date=False, median=None):
+def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenology_{}.nc".format(datetime.datetime.now().strftime("%H%M")), date=False, median=None, std=None):
     """
     Creates the skeleton of the netcdf file to be used by write_to_output_netcdf, all of this is metadata.
     """
@@ -750,11 +750,15 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.createVariable('probability', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL)
     ds.variables['probability'].setncattr("units", "likelihood")
     ds.createVariable('median_chlorophyll', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL)
+    ds.createVariable('chlorophyll_std_dev', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL)
     ds.variables['median_chlorophyll'].setncattr("units", "mg chl m^3")
+    ds.variables['chlorophyll_std_dev'].setncattr("units", "mg chl m^3")
     ds.setncattr("generation command", str(" ".join(sys.argv)))
     ds.setncattr("run location", str(os.getcwd()))
     if isinstance(median, numpy.ndarray):
         ds.variables['median_chlorophyll'][:] = median
+    if isinstance(std, numpy.ndarray):
+        ds.variables['chlorophyll_std_dev'][:] = std
     ds.close()
     logger.info("created netcdf {}".format(name))
 
@@ -813,6 +817,7 @@ def get_multi_year_two_blooms_output(numpy_storage, chunk, chl_shape, chl_dtype,
     sst_der = numpy.ma.masked_where((sst_der == FILL_VAL), sst_der)
     #logger.info("doing chlorophyll initiations")
     #start_end_duration_array = numpy.apply_along_axis(get_start_index_and_duration, 0, year_chl_boxcar)
+    logger.info((chl_data.shape[2],chl_data.shape[3], int((chl_data.shape[0] -start_date) // date_seperation_per_year), 2,5))
     year_true_start_end_array = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int((chl_data.shape[0] -start_date) // date_seperation_per_year), 2,5))
     logger.info(int((chl_data.shape[0] -start_date) // date_seperation_per_year))
     total_blooms = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int((chl_data.shape[0] -start_date) // date_seperation_per_year)))
@@ -821,10 +826,12 @@ def get_multi_year_two_blooms_output(numpy_storage, chunk, chl_shape, chl_dtype,
     total_blooms.fill(FILL_VAL)
     total_blooms_date = total_blooms.copy()
     logger.info("doing sst initiations and correction")
+    logger.debug("start date : {}".format(start_date))
     for ix, iy in tqdm.tqdm(numpy.ndindex(chl_data.shape[2], chl_data.shape[3]), total=(chl_data.shape[2] * chl_data.shape[3]), disable=True):
         try:
             verbose=False
-            if iy == debug_pixel[0] and ix == debug_pixel[1]:
+            #if iy == debug_pixel[0] and ix == debug_pixel[1]:
+            if iy == 11 and ix == 70:
                 if logger.level <= logging.INFO:
                     logger.setLevel(logging.DEBUG)
                     logger.info("debug pixel {} {} encountered".format(ix,iy))
@@ -841,10 +848,13 @@ def get_multi_year_two_blooms_output(numpy_storage, chunk, chl_shape, chl_dtype,
             logger.debug("end duration array")
             logger.debug(year_true_start_end_array[ix,iy])
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
             logger.error(e)
             logger.error(repr(e))
-            logger.error(match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date, reference_date=reference_index))
-            logger.error()
+            logger.error(results)
+            logger.error((ix, iy))
+            logger.error(exc_tb.tb_lineno)
+            match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],chl_boxcar[:,:,ix,iy], chl_data[:,:,ix,iy], date_seperation_per_year, reverse_search, verbose=False, start_date=start_date, reference_date=reference_index)
         """
         if ix in completion_points and iy == 0:
             logger.info(completion_points.index(ix) * 10, "% complete")
@@ -872,6 +882,7 @@ def extend_array(array_like, entries_per_year, start_date=0):
     last_entry = array_like[-entries_per_year:]
     #stick em together
     output = numpy.concatenate([first_entry, array_like, last_entry], axis = 0)
+    output = numpy.ma.masked_invalid(output)
     return output, start_date + entries_per_year
 
 def multi_proc_init(c, s, l):
@@ -913,6 +924,8 @@ def chunk_by_chunk(chunk_idx, chunk):
     global debug_chunk
     global numpy_storage
 
+    chunk_start_date = start_date
+
     if chunk_idx == debug_chunk:
         pass
 
@@ -929,14 +942,17 @@ def chunk_by_chunk(chunk_idx, chunk):
     chl_array = chl_ds.variables[chl_variable][slc]
     chl_lons = chl_ds.variables[chl_lon_var][x[0]:x[1]]
     chl_lats = chl_ds.variables[chl_lat_var][y[0]:y[1]]
+    #mask if it isn't, else will raise errors
+    if not numpy.ma.is_masked(chl_array):
+        chl_array = numpy.ma.masked_array(chl_array, numpy.isnan(chl_array))
     if chl_array.mask.all():
         logger.info(numpy.isnan(chl_array).all())
         logger.info("skipping as empty")
         chl_lock.release()
         #output empty netcdf
         empty_med = numpy.empty((chl_lats.shape[0], chl_lons.shape[0]), dtype=chl_array.dtype) if LAT_IDX >LON_IDX else numpy.empty(shape=(chl_lons.shape[0], chl_lats.shape[0]), dtype=chl_array.dtype)
-        create_phenology_netcdf(chl_lons, chl_lats, [1,1], output.replace(".nc", "_by_maxval.nc"), median=empty_med)
-        create_phenology_netcdf(chl_lons, chl_lats, [1,1], output.replace(".nc", "_by_date.nc"), date=True, median=empty_med)
+        create_phenology_netcdf(chl_lons, chl_lats, [1,1], output.replace(".nc", "_by_maxval.nc"), median=empty_med, std=empty_med)
+        create_phenology_netcdf(chl_lons, chl_lats, [1,1], output.replace(".nc", "_by_date.nc"), date=True, median=empty_med, std=empty_med)
         return True
     chl_lock.release()
     if args.reshape:
@@ -978,12 +994,17 @@ def chunk_by_chunk(chunk_idx, chunk):
         sst_slc[SST_LAT_IDX] = slice(y[0], y[1])
         sst_slc[SST_TIME_IDX] = slice(args.sst_start_index, args.sst_end_index)
         sst_array = sst_ds.variables[sst_variable][sst_slc]
+        if not numpy.ma.is_masked(sst_array):
+            sst_array = numpy.ma.masked_array(sst_array, numpy.isnan(sst_array))
+
         sst_lock.release()
 
         if args.extend_sst_data:
-            sst_array, _ = extend_array(sst_array, date_seperation_per_year, start_date)
+            sst_array, _ = extend_array(sst_array, date_seperation_per_year, chunk_start_date)
+
         if args.reshape_sst:
             sst_array.shape = (sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])
+
         sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, chunk_idx, skip=args.skip_sst_prep)
         logger.info("sst_shape: {}".format(sst_shape))
         logger.info("sst_dtype: {}".format(USE_DTYPE))
@@ -995,9 +1016,10 @@ def chunk_by_chunk(chunk_idx, chunk):
         chl_array.shape = (chl_array.shape[0], chl_array.shape[1], chl_array.shape[3], chl_array.shape[2])
     """
     if args.extend_chl_data:
-        chl_array, start_date = extend_array(chl_array, date_seperation_per_year, start_date)
+        chl_array, chunk_start_date = extend_array(chl_array, date_seperation_per_year, chunk_start_date)
+        logger.info("start date after extension: {}".format(chunk_start_date))
 
-    chl_shape, chl_dtype, chl_median = prepare_chl_variables(chl_array, numpy_storage, chunk_idx, date_seperation_per_year, chl_lats, chl_lons, do_model_med=args.modelled_median, median_threshold=med_thresh, median_filename=chl_filename.replace(".nc", "_median_{}_chunk{}.nc".format(time_of_run, chunk_idx)))
+    chl_shape, chl_dtype, chl_median, chl_std_dev = prepare_chl_variables(chl_array, numpy_storage, chunk_idx, date_seperation_per_year, chl_lats, chl_lons, do_model_med=args.modelled_median, median_threshold=med_thresh, median_filename=chl_filename.replace(".nc", "_median_{}_chunk{}.nc".format(time_of_run, chunk_idx)))
     logger.info("chl_shape: {}".format(chl_shape))
     logger.info("chl_dtype: {}".format(USE_DTYPE))
 
@@ -1009,9 +1031,9 @@ def chunk_by_chunk(chunk_idx, chunk):
         sys.exit()
     
     #simple regridding
-    create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_maxval.nc"), median=chl_median)
-    create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_date.nc"), date=True, median=chl_median)
-    logger.info("using start date {}".format(start_date))
+    create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_maxval.nc"), median=chl_median, std=chl_std_dev)
+    create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_date.nc"), date=True, median=chl_median, std=chl_std_dev)
+    logger.info("using start date {}".format(chunk_start_date))
     get_multi_year_two_blooms_output(numpy_storage, 
                                     chunk_idx,
                                     chl_shape,
@@ -1020,7 +1042,7 @@ def chunk_by_chunk(chunk_idx, chunk):
                                     sst_shape, 
                                     sst_dtype, 
                                     date_seperation_per_year=date_seperation_per_year, 
-                                    start_date=start_date, 
+                                    start_date=chunk_start_date, 
                                     reverse_search=reverse_search,
                                     reference_index=ref_index,
                                     out_date_netcdf=output.replace(".nc", "_by_date.nc"),
@@ -1236,8 +1258,11 @@ if __name__ == "__main__":
                     med_prob_slc[2] = slice(x[0], x[1])
                     med_prob_slc[1] = slice(y[0], y[1])
                 for var in [x for x in maxval_ds.variables.keys() if not x in maxval_ds.dimensions.keys() and x not in ['median_chlorophyll', 'probability']]:
-                    maxval_ds[var][slc] = maxval_chunk[var][:]
-                    date_ds[var][slc] = date_chunk[var][:]
+                    try:
+                        maxval_ds[var][slc] = maxval_chunk[var][:]
+                        date_ds[var][slc] = date_chunk[var][:]
+                    except ValueError:
+                        logger.warning("Encountered potentially empty file during stitching, this might not be a problem but if you see a large square area of empty data this is likely the cause. Found in chunk {}".format(chunk_idx))
                 for var in [x for x in maxval_ds.variables.keys() if x in ['median_chlorophyll', 'probability']]:
                     maxval_ds[var][med_prob_slc] = maxval_chunk[var][:]
                     date_ds[var][med_prob_slc] = date_chunk[var][:]

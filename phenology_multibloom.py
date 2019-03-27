@@ -101,7 +101,10 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
     in a run using global data that took 30 minutes, this function made up 513 seconds of the processing time
     """
     global duration_minimum_value
+    global start_minimum_seperation_value
 
+    #before we do anything else, because the boxcar method gives us an output that is 0.0 in place of nans we should increment those by 0.0001 so that the polariser can find them
+    array_like[array_like==0.0] = 0.0001
     #array_like = numpy.squeeze(array_like)
     #if it's all gone horribly wrong then this will quit out of it straight away
     if len(array_like):
@@ -133,23 +136,31 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
     poss_starts = [x for x in zero_crossings if array_like[x] < 0]
     poss_ends = [x for x in zero_crossings if array_like[x] > 0]
 
-    starts = []
+    logger.debug("starts: {}".format(poss_starts))
+    logger.debug("ends: {}".format(poss_ends))
+
+    starts = poss_starts
     #flip this around!
     already_tested = False
+
+    """
+    if values go crazy we removed this
     for idx, date in enumerate(poss_starts):
         if not idx == len(poss_starts) - 1:
             #TODO change this to a command line option
             if already_tested:
                 already_tested = False
                 continue
-            if (poss_starts[idx+1] - date) <= 5:
+            if (poss_starts[idx+1] - date) <= start_minimum_seperation_value:
                 starts.append(date)
                 already_tested = True
             else:
                 starts.append(date)
         else:
-            if (date - poss_starts[idx-1]) > 5:
+            if (date - poss_starts[idx-1]) > start_minimum_seperation_value:
                 starts.append(date)
+    """
+    
     ends = []
     for start in starts:
         try:
@@ -188,8 +199,11 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
         try:
            end = next(x for x in ends if x > start)
            max_idx = numpy.nanargmax(chl_values[start:end + 1])
+           #we find the "max" value from the chl boxcar
            chl_val = chl_values[max_idx + date_offset + start] if not chl_values.mask[max_idx + date_offset + start] else numpy.nan
-           dates.append([start + date_offset,end + date_offset,end-start,max_idx + date_offset + start,chl_val])
+           if numpy.isnan(chl_val):
+               continue
+           dates.append([start + date_offset,end + date_offset,end-start,max_idx + date_offset + start - 1,chl_val])
            max_idx = None
         except ValueError:
             if chl_values[start:end + 1]:
@@ -465,12 +479,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
         
         #Alternative date sorting, based purely on high/low max date
-        high_date = high[3] if high[3] else -1000
-        low_date = low[3] if low[3] else -1000
-        if low_date > high_date:
-            blooms_by_date.append([high,low])
-        else:
-            blooms_by_date.append([low,high])
+        blooms_by_date.append([high,low])
         
 
         """
@@ -602,17 +611,17 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
     ds.createDimension('LATITUDE', chl_lats.shape[0])
     ds.createDimension('DEPTH', 1)
     ds.createDimension('TIME', None)
-    ds.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
+    ds.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'], zlib=True)
     ds.variables['LATITUDE'].setncattr("units", "degrees_north")
     ds.variables['LATITUDE'][:] = chl_lats
-    ds.createVariable('LONGITUDE', 'float64', dimensions=['LONGITUDE'])
+    ds.createVariable('LONGITUDE', 'float64', dimensions=['LONGITUDE'], zlib=True)
     ds.variables['LONGITUDE'].setncattr("units", "degrees_east")
     ds.variables['LONGITUDE'][:] = chl_lons
-    ds.createVariable('DEPTH', 'float32', dimensions=['DEPTH'])
+    ds.createVariable('DEPTH', 'float32', dimensions=['DEPTH'], zlib=True)
     ds.variables['DEPTH'].setncattr("units", "meters")
     ds.variables['DEPTH'].setncattr("positive", "down")
     ds.variables['DEPTH'][:] = [0.1]
-    ds.createVariable('TIME', 'float32', dimensions=['TIME'])
+    ds.createVariable('TIME', 'float32', dimensions=['TIME'], zlib=True)
     ds.variables['TIME'].setncattr("units", "years")
     #switch back to LATITIUDE and LONGITUDE, establish why the flipping of the axis makes everything go screwey
 
@@ -639,25 +648,9 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
             date_masks.append(date_zeniths)
         
         temp_chl_array = chl_array.copy()
-        ods = nc.Dataset("lat_zen_angle_{}.nc".format(datetime.datetime.now().strftime("%H%M")), "w")
-        ods.createDimension('LATITUDE', chl_lats.shape[0])
-        ods.createDimension('LONGITUDE', chl_lons.shape[0])
-        ods.createDimension('TIME', date_seperation)
-        ods.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
-        ods.variables['LATITUDE'].setncattr("units", "degrees_north")
-        ods.variables['LATITUDE'][:] = chl_lats
-
-        ods.createVariable('LONGITUDE', 'float64', dimensions=['LONGITUDE'])
-        ods.variables['LONGITUDE'].setncattr("units", "degrees_north")
-        ods.variables['LONGITUDE'][:] = chl_lons
-
-        ods.createVariable('TIME', 'float32', dimensions=['TIME'])
-        ods.variables['TIME'].setncattr("units", "years")
-        ods.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
-        ods.variables['zen'].setncattr("units", "degrees")
 
 
-        ds.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+        ds.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
         ds.variables['zen'].setncattr("units", "degrees")
         for year in range(0, date_seperation, chl_array.shape[0] + 1):
             for index, date_mask in enumerate(date_masks):
@@ -667,9 +660,7 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
                             temp_chl_array.mask[year + index,0,row,:] = True
                         if LAT_IDX == 3:
                             temp_chl_array.mask[year + index,0,:,row] = True
-                    ods.variables['zen'][index,row,:] = true_zens[index][row]
                     ds.variables['zen'][index,row,:] = true_zens[index][row]
-        ods.close()
 
         #TODO add gap filling, --gap-filling with a few choices for interpolation options, if not specified then don't do it at all
 
@@ -715,7 +706,7 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
 
     logger.info("filled_chl has mask? {}".format(filled_chl.mask))
 
-    ds.createVariable('filled_chl', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('filled_chl', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
 
     #! here it would be good to give the option to select the value of the median threshold, e.g., median plus 5%, 10%, 15%...
 
@@ -735,7 +726,7 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
     #anomaly_map[:] = anomaly[:]
 
     #anomaly = anomaly_map
-    ds.createVariable('anomaly', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('anomaly', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['anomaly'].setncattr("units", "mg chl m^3")
     ds.variables['anomaly'][:] = anomaly[:]
 
@@ -753,7 +744,7 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
     anomaly = None
     chl_cumsum_map = None
 
-    ds.createVariable('chl_cumsum', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('chl_cumsum', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['chl_cumsum'].setncattr("units", "mg chl m^3")
     ds.variables['chl_cumsum'][:] = chl_cumsum[:]
 
@@ -768,7 +759,7 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
     chl_cumsum = None
     chl_der_map = None
     
-    ds.createVariable('chl_der', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('chl_der', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['chl_der'].setncattr("units", "mg chl m^3")
     ds.variables['chl_der'][:] = chl_der[:]
 
@@ -811,16 +802,38 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
     logger.info("after chl preparation {} new timesteps were created, original shape: {}, new shape: {}".format(new_timesteps, chl_array.shape[0], chl_boxcar.shape[0]))
     logger.info("this means there are {} new timesteps at the beginning and end of the chl boxcar array".format(additional_steps))
 
-    logger.info("padding {} time steps from january {} in chl boxcar".format(missing_chl_dates_at_start - math.floor(additional_steps), START_YEAR))
-    start_fill_arrays = [fill_arr for i in range(math.floor(additional_steps), missing_chl_dates_at_start)]
+    if not missing_chl_dates_at_start - math.floor(additional_steps) < 0:
+        logger.info("padding {} time steps from january {} in chl boxcar".format(missing_chl_dates_at_start - math.floor(additional_steps), START_YEAR))
+        start_fill_arrays = [fill_arr for i in range(math.floor(additional_steps), missing_chl_dates_at_start)]
+    else:
+        start_fill_arrays = missing_chl_dates_at_start - math.floor(additional_steps)
 
     if not additional_steps.is_integer():
         logger.warning("as the number of new timesteps is not a whole number will pad one additional step to the beginning of the chl boxcar array")
-    logger.info("padding {} time steps to december in chl boxcar".format(missing_chl_dates_at_end - math.ceil(additional_steps), START_YEAR))
-    end_fill_arrays = [fill_arr for i in range(math.ceil(additional_steps), missing_chl_dates_at_end)]
+
+    if not missing_chl_dates_at_end - math.ceil(additional_steps) < 0:
+        logger.info("padding {} time steps to december in chl boxcar".format(missing_chl_dates_at_end - math.ceil(additional_steps), START_YEAR))
+        end_fill_arrays = [fill_arr for i in range(math.ceil(additional_steps), missing_chl_dates_at_end)]
+    else:
+        end_fill_arrays = missing_chl_dates_at_end - math.ceil(additional_steps)
+
+    if not isinstance(end_fill_arrays, list):
+        logger.info("removing {} values from boxcar end".format(end_fill_arrays))
+        chl_boxcar = chl_boxcar[0:chl_boxcar.shape[0] - abs(end_fill_arrays)]
+        end_fill_arrays=[]
+        logger.info(chl_boxcar.shape)
+
+    if not isinstance(start_fill_arrays, list):
+        logger.info("removing {} values from boxcar start".format(start_fill_arrays))
+        chl_boxcar = chl_boxcar[0+abs(start_fill_arrays):chl_boxcar.shape[0]]
+        start_fill_arrays=[] 
+        logger.info(chl_boxcar.shape)
+
+    
 
     if not (chl_boxcar.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year == 0:
         logger.error("After padding, the chlorophyll boxcar end product did not divide equally!")
+        logger.error((chl_boxcar.shape[0] + len(start_fill_arrays) + len(end_fill_arrays), date_seperation_per_year, (chl_boxcar.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year))
         raise Exception("After padding, the chlorophyll boxcar end product did not divide equally!")
     
     #pad the boxcar back to january    
@@ -850,7 +863,7 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
     chl_boxcar_map = numpy.memmap(os.path.join(numpy_storage, str(chunk), "chl_sbx"), mode="w+", shape=chl_boxcar.shape, dtype=USE_DTYPE)
     chl_boxcar_map[:] = chl_boxcar[:]
     
-    ds.createVariable('chl_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('chl_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['chl_boxcar'].setncattr("units", "mg chl m^3")
     ds.variables['chl_boxcar'][:] = chl_boxcar[:]
 
@@ -890,38 +903,41 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.createVariable('TIME', 'float32', dimensions=['TIME'])
     ds.variables['TIME'].setncattr("units", "years")
     #switch back to LATITIUDE and LONGITUDE, establish why the flipping of the axis makes everything go screwey
-    ds.createVariable('date_start1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+    ds.createVariable('date_start1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL, zlib=True)
     week_descriptor = 'weeks from {}'.format(REF_MONTH)
     #description = ' data between {} and {} for years {} to {}'.format(REF_MONTH, END_MONTH, START_YEAR, END_YEAR)
     ds.variables['date_start1'].setncattr("units", week_descriptor)
-    ds.createVariable('date_max1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+    ds.createVariable('date_max1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL, zlib=True)
     ds.variables['date_max1'].setncattr("units", week_descriptor)
-    ds.createVariable('date_end1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+    ds.createVariable('date_end1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL, zlib=True)
     ds.variables['date_end1'].setncattr("units", week_descriptor)
-    ds.createVariable('duration1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+    ds.createVariable('duration1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL, zlib=True)
     ds.variables['duration1'].setncattr("units", week_descriptor)
-    ds.createVariable('date_start2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+    ds.createVariable('date_start2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL, zlib=True)
     ds.variables['date_start2'].setncattr("units", week_descriptor)
-    ds.createVariable('date_max2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+    ds.createVariable('date_max2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL, zlib=True)
     ds.variables['date_max2'].setncattr("units", week_descriptor)
-    ds.createVariable('date_end2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+    ds.createVariable('date_end2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL, zlib=True)
     ds.variables['date_end2'].setncattr("units", week_descriptor)
-    ds.createVariable('duration2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+    ds.createVariable('duration2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL, zlib=True)
     ds.variables['duration2'].setncattr("units", week_descriptor)
-    ds.createVariable('max_val1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
-    ds.createVariable('max_val2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+    ds.createVariable('max_val1', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL, zlib=True)
+    ds.createVariable('max_val2', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL, zlib=True)
     ds.variables['max_val2'].setncattr("units", "mgChl/m3")
     ds.variables['max_val1'].setncattr("units", "mgChl/m3")
-    ds.createVariable('total_blooms', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL)
+    ds.createVariable('total_blooms', 'float32', dimensions=DIM_ORDER,fill_value=FILL_VAL, zlib=True)
     ds.variables['total_blooms'].setncattr("units", "observations")
-    ds.createVariable('probability', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL)
+    ds.createVariable('probability', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL, zlib=True)
     ds.variables['probability'].setncattr("units", "likelihood")
-    ds.createVariable('median_chlorophyll', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL)
-    ds.createVariable('chlorophyll_std_dev', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL)
+    ds.createVariable('median_chlorophyll', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL, zlib=True)
+    ds.createVariable('chlorophyll_std_dev', 'float32', dimensions=DIM_ORDER[1:4],fill_value=FILL_VAL, zlib=True)
     ds.variables['median_chlorophyll'].setncattr("units", "mg chl m^3")
     ds.variables['chlorophyll_std_dev'].setncattr("units", "mg chl m^3")
     ds.setncattr("generation command", str(" ".join(sys.argv)))
     ds.setncattr("run location", str(os.getcwd()))
+    ds.setncattr("reverse_search", reverse_search)
+    ds.setncattr("date_zero", date_zero_datetime.strftime("%Y/%m/%d"))
+    ds.setncattr("steps_per_year", date_seperation_per_year)
     if isinstance(median, numpy.ndarray):
         ds.variables['median_chlorophyll'][:] = median
     if isinstance(std, numpy.ndarray):
@@ -967,29 +983,29 @@ def create_intermediate_netcdf(output_name, chl_lons, chl_lats):
     ds.createDimension('LATITUDE', chl_lats.shape[0])
     ds.createDimension('DEPTH', 1)
     ds.createDimension('TIME', None)
-    ds.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'])
+    ds.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'], zlib=True)
     ds.variables['LATITUDE'].setncattr("units", "degrees_north")
     ds.variables['LATITUDE'][:] = chl_lats
-    ds.createVariable('LONGITUDE', 'float64', dimensions=['LONGITUDE'])
+    ds.createVariable('LONGITUDE', 'float64', dimensions=['LONGITUDE'], zlib=True)
     ds.variables['LONGITUDE'].setncattr("units", "degrees_east")
     ds.variables['LONGITUDE'][:] = chl_lons
-    ds.createVariable('DEPTH', 'float32', dimensions=['DEPTH'])
+    ds.createVariable('DEPTH', 'float32', dimensions=['DEPTH'], zlib=True)
     ds.variables['DEPTH'].setncattr("units", "meters")
     ds.variables['DEPTH'].setncattr("positive", "down")
     ds.variables['DEPTH'][:] = [0.1]
-    ds.createVariable('TIME', 'float32', dimensions=['TIME'])
+    ds.createVariable('TIME', 'float32', dimensions=['TIME'], zlib=True)
     ds.variables['TIME'].setncattr("units", "years")
-    ds.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['zen'].setncattr("units", "degrees")
-    ds.createVariable('filled_chl', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('filled_chl', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['filled_chl'].setncattr("units", "mg chl m^3")
-    ds.createVariable('anomaly', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('anomaly', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['anomaly'].setncattr("units", "mg chl m^3")
-    ds.createVariable('chl_cumsum', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('chl_cumsum', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['chl_cumsum'].setncattr("units", "mg chl m^3")
-    ds.createVariable('chl_der', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('chl_der', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['chl_der'].setncattr("units", "mg chl m^3")
-    ds.createVariable('chl_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL)
+    ds.createVariable('chl_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['chl_boxcar'].setncattr("units", "mg chl m^3")
     ds.close()
 
@@ -1329,15 +1345,18 @@ def get_ds_time_data(ds, time_var, begin_date=False, var="chl"):
     try:
         if not begin_date:
             dts = nc.num2date(ds[time_var][:], ds[time_var].units)
-            ref_date = dts[start_date+ref_index]
-            start_datetime = dts[start_date]
+            ref_date = datetime.datetime(year=dts[0].year, month=1, day=1) + datetime.timedelta(days=(365 * (start_date +ref_index / date_seperation_per_year)))
+            start_datetime = datetime.datetime(year=dts[0].year, month=1, day=1) + datetime.timedelta(days=(365 * (start_date / date_seperation_per_year)))
+            init_date = dts[0]
+            end_date = dts[-1]
         else:
-            init_date = datetime.datetime.strptime(args.chl_begin_date, '%d/%m/%Y')
-            start_datetime = init_date + datetime.timedelta(days=(365 * (start_date / date_seperation_per_year)))
-            ref_date = start_datetime + datetime.timedelta(days=(365 * (ref_index / date_seperation_per_year)))
+            init_date = datetime.datetime.strptime(begin_date, '%d/%m/%Y')
+            start_datetime = datetime.datetime(year=init_date.year,month=1,day=1) + datetime.timedelta(days=(365 * (start_date / date_seperation_per_year)))
+            ref_date =  datetime.datetime(year=init_date.year,month=1,day=1) + datetime.timedelta(days=(365 * (start_date +ref_index / date_seperation_per_year)))
+            end_date = datetime.datetime(year=init_date.year,month=1,day=1) + datetime.timedelta(days=(ds[time_var].shape[0] * (365 / date_seperation_per_year)))
         logger.info(ref_date)
-        REF_MONTH = calendar.month_name[ref_date.month]
-        START_YEAR = dts[0].year
+        REF_MONTH = ref_date.strftime("%d %B")
+        START_YEAR = start_datetime.year
         logger.info("reference date selected: "+ref_date.strftime("%d/%m/%Y"))
         logger.info("start date selected: "+start_datetime.strftime("%d/%m/%Y"))
         logger.info("reference month: "+ REF_MONTH)
@@ -1345,8 +1364,8 @@ def get_ds_time_data(ds, time_var, begin_date=False, var="chl"):
 
 
         logger.info("getting {} missing timesteps".format(var))
-        start_difference = dts[0] - datetime.datetime(year=dts[0].year, month=1, day=1)
-        end_difference =  datetime.datetime(year=dts[-1].year, month=12, day=31) - dts[-1]
+        start_difference = init_date - datetime.datetime(year=init_date.year, month=1, day=1)
+        end_difference =  datetime.datetime(year=end_date.year, month=12, day=31) - end_date
         missing_dates_at_start = start_difference.days//8
         missing_dates_at_end = end_difference.days//8
         logger.info("missing steps to january at start of file: {}".format(missing_dates_at_start))
@@ -1356,7 +1375,7 @@ def get_ds_time_data(ds, time_var, begin_date=False, var="chl"):
         logger.error("could not identify {} start date, please specify the first date you expect in the file (time index 0, not first date index) with --{}_begin_date e.g. --chl_begin_date 01/01/1997".format(var, var))
         sys.exit()
     
-    return REF_MONTH, START_YEAR, missing_dates_at_start, missing_dates_at_end, ds[time_var].shape[0]
+    return REF_MONTH, START_YEAR, missing_dates_at_start, missing_dates_at_end, ds[time_var].shape[0], start_datetime
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -1393,6 +1412,7 @@ if __name__ == "__main__":
     parser.add_argument("--no_chl_fill", action='store_true', default=False, help="Don't fill the chlorophyll variable")
     parser.add_argument("--debug_chunk_only", action='store_true', default=False, help="Only process our debug pixel and its relative chunk")
     parser.add_argument("--minimum_bloom_duration", type=int, default=15, help="the minimum duration in days for a bloom to be retained, this is converted to timesteps by: timesteps_per_year * (days / 365). Default 15.")
+    parser.add_argument("--minimum_bloom_seperation_duration", type=int, default=10, help="the minimum days between a two initiation dates, this is converted to timesteps by: timesteps_per_year * (days / 365). Default 15.")
     args = parser.parse_args()
 
    
@@ -1429,6 +1449,7 @@ if __name__ == "__main__":
     #as 100 days is 0.27 of 365 we can just do that
     date_seperation_per_year = int(args.date_seperation_per_year)
     duration_minimum_value = int(round(date_seperation_per_year * (args.minimum_bloom_duration / 365)))
+    start_minimum_seperation_value = int(round(date_seperation_per_year * (args.minimum_bloom_seperation_duration / 365)))
     if not args.reverse_search:
         reverse_search = int(round(int(args.date_seperation_per_year) * 0.28))
     logger.info("Reverse search:{}".format(reverse_search))
@@ -1450,7 +1471,7 @@ if __name__ == "__main__":
         #test for more than 1 variable, if so quit out and complain that it doesn't know which to use
         chl_variable = [x for x in chl_ds.variables if args.chl_var in x.lower()][0]
         chl_lon_var,chl_lat_var,chl_time_var = ds_to_dim_vars(chl_ds)
-        REF_MONTH, START_YEAR, missing_chl_dates_at_start, missing_chl_dates_at_end, chl_time_len = get_ds_time_data(chl_ds, chl_time_var, begin_date=args.chl_begin_date, var="chl")
+        REF_MONTH, START_YEAR, missing_chl_dates_at_start, missing_chl_dates_at_end, chl_time_len, date_zero_datetime = get_ds_time_data(chl_ds, chl_time_var, begin_date=args.chl_begin_date, var="chl")
         chl_lons = chl_ds.variables[chl_lon_var][:]
         chl_lats = chl_ds.variables[chl_lat_var][:]
         logger.info("lats shape {}".format(chl_lats.shape))
@@ -1469,7 +1490,7 @@ if __name__ == "__main__":
             logger.info("only one file found, assuming full stack of observations")
             sst_ds = nc.Dataset(args.sst_location)
             sst_lon_var,sst_lat_var,sst_time_var = ds_to_dim_vars(sst_ds)
-            sst_ref_month, sst_ref_year, missing_sst_dates_at_start, missing_sst_dates_at_end, sst_time_len = get_ds_time_data(sst_ds, sst_time_var, begin_date=args.chl_begin_date, var="sst")
+            sst_ref_month, sst_ref_year, missing_sst_dates_at_start, missing_sst_dates_at_end, sst_time_len, sst_zero_datetime = get_ds_time_data(sst_ds, sst_time_var, begin_date=args.sst_begin_date, var="sst")
             if not (missing_sst_dates_at_start + missing_sst_dates_at_end + sst_time_len) == (missing_chl_dates_at_start + missing_chl_dates_at_end + chl_time_len):
                 logger.error("sst time shape : {} chl time shape : {}".format(sst_time_len, chl_time_len))
                 logger.error("sst time after padding would not equal chl after padding, got {} for sst and {} for chl, this might be a bug or a problem with your file".format((missing_sst_dates_at_start + missing_sst_dates_at_end + sst_time_len), (missing_chl_dates_at_start + missing_chl_dates_at_end + chl_time_len)))
@@ -1595,9 +1616,12 @@ if __name__ == "__main__":
                 date_ds.close()
                 maxval_chunk.close()
                 date_chunk.close()
+                intermediate_ds.close()
+                intermediate_chunk.close()
                 logger.debug("Removing chunk files.")
                 os.remove(maxval_chunk_file[0])
                 os.remove(date_chunk_file[0])
+                os.remove(intermediate_chunk_file[0])
 
         logger.info("complete!")
 

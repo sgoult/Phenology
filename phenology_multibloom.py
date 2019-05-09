@@ -1633,6 +1633,21 @@ if __name__ == "__main__":
         for chunk_idx, chunk in enumerate(tqdm.tqdm(chunks)):
             intermediate_chunk_file = [x for x in intermediate_files if "chunk{}_".format(chunk_idx) in x]
             if len(intermediate_chunk_file):
+                slc = [slice(None)] * 4
+                med_prob_slc = [slice(None)] * 3
+                x,y = chunk
+                y = y if y[0] != 1 else (0, y[1])
+                x = x if x[0] != 1 else (0, x[1])
+                if LAT_IDX > LON_IDX:
+                    slc[2] = slice(x[0], x[1])
+                    slc[3] = slice(y[0], y[1])
+                    med_prob_slc[1] = slice(x[0], x[1])
+                    med_prob_slc[2] = slice(y[0], y[1])
+                else:
+                    slc[3] = slice(x[0], x[1])
+                    slc[2] = slice(y[0], y[1])
+                    med_prob_slc[2] = slice(x[0], x[1])
+                    med_prob_slc[1] = slice(y[0], y[1])
                 intermediate_chunk = nc.Dataset(intermediate_chunk_file[0], 'r')
                 #only output chl_sbx variabe, not all
                 for var in [x for x in intermediate_ds.variables.keys() if not x in intermediate_ds.dimensions.keys() and x not in ['zen']]:

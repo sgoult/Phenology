@@ -45,6 +45,9 @@ logger.setLevel(logging.DEBUG)
 
 numpy_storage=None
 
+def reversedEnumerate(l):
+    return zip(range(len(l)-1, -1, -1), l)
+
 """
 Solar zenith stuff taken from jad
 """
@@ -339,7 +342,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     blooms_by_date = []
     logger.debug("performing year filtering from {}".format(start_date))
     #remove any year that doesn't have full 12 months of coverage
-    for year, year_start_index in enumerate(range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year)):
+    for year, year_start_index in reversedEnumerate(list(reversed(list(range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year))))):
         logger.debug("doing year {}".format(year))
         if year_start_index + date_seperation_per_year > chl_sbx_slice.shape[0]:
             continue
@@ -348,6 +351,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #then this currently selects june - june, rather than january - december, is this correct? The central month 
         possible_high_blooms = [x for x in high_records if x[3] > year and x[3] < (year_start_index + date_seperation_per_year) and not x[0] < (year_start_index - reverse_search)]
         possible_low_blooms = [x for x in low_records if x[3] > year and x[3] < (year_start_index + date_seperation_per_year) and not x[0] < (year_start_index - reverse_search)]
+
+        #test the start date, and the end date, if the start and end date are roughly equal
+        #select the next max bloom
 
         logger.debug("possible_high_blooms")
         logger.debug(possible_high_blooms)
@@ -1630,6 +1636,7 @@ if __name__ == "__main__":
                 intermediate_chunk = nc.Dataset(intermediate_chunk_file[0], 'r')
                 #only output chl_sbx variabe, not all
                 for var in [x for x in intermediate_ds.variables.keys() if not x in intermediate_ds.dimensions.keys() and x not in ['zen']]:
+                    logger.info(var)
                     intermediate_ds[var][slc] = intermediate_chunk[var][:]
 
                 intermediate_chunk.close()

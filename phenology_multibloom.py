@@ -590,6 +590,7 @@ def prepare_sst_variables(sst_array, numpy_storage, chunk, skip=False, chunk_idx
         logger.error("After padding, the sst derivitive end product did not divide equally!")
         raise Exception("After padding, the sst derivitive end product did not divide equally!")
     
+
     sst_der = numpy.ma.concatenate(start_fill_arrays + [sst_der] + end_fill_arrays)
 
     sst_der_map = numpy.memmap(os.path.join(numpy_storage, str(chunk), "sst_der"), mode="w+", shape=sst_der.shape, dtype=USE_DTYPE)
@@ -625,7 +626,7 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
     ds.variables['TIME'].setncattr("units", "years")
     #switch back to LATITIUDE and LONGITUDE, establish why the flipping of the axis makes everything go screwey
 
-    
+    chl_array_fill_val = chl_array.fill_value
     #TODO insert the solar zenith angle establishment, only if handed a modelled input (so add flag for --modelled-input)
     if modelled_threshold:
         days_per_ob = round(365 / date_seperation)
@@ -647,7 +648,7 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
             true_zens.append(true_zen)
             date_masks.append(date_zeniths)
         
-        temp_chl_array = chl_array.copy()
+        temp_chl_array = chl_array
 
 
         ds.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
@@ -668,7 +669,7 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
     #create the threshold var, this should be done on the original chlorophyll data, not the filled variable
     if modelled_threshold:
         logger.info("chl_median")
-        temp_chl_array
+        temp_chl_array = numpy.ma.masked_where(temp_chl_array == chl_array_fill_val, temp_chl_array)
         chl_median = numpy.ma.median(temp_chl_array,axis=0)
         logger.info("median value: {}".format(chl_median))
         logger.info("median threshold: {}".format(median_threshold))
@@ -682,6 +683,9 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
         std_dev = numpy.std(temp_chl_array, axis=0)
     else:
         std_dev = numpy.std(chl_array, axis=0)
+
+    if modelled_threshold:
+        chl_array = temp_chl_array
 
     #! after estimating the median, i apply a filling to the chl time-series, e.g., window of 8 time steps, but it would be good to be able to choose other width of the window, e.g., 5 time-steps or 3 time-steps...
     if do_fill_chl:
@@ -704,7 +708,7 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
     else:
         filled_chl = chl_array
 
-    logger.info("filled_chl has mask? {}".format(filled_chl.mask))
+    logger.info("filled_chl has mask? {}".format(filled_chl.mask.any()))
 
     ds.createVariable('filled_chl', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
 
@@ -849,8 +853,13 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
         logger.error("After padding, the chlorophyll boxcar end product did not divide equally!")
         raise Exception("After padding, the chlorophyll boxcar end product did not divide equally!")
 
-
+    logger.info("mask pre concatenation")
+    logger.info(filled_chl.mask.any())
     filled_chl = numpy.ma.concatenate(start_fill_arrays + [filled_chl] + end_fill_arrays)
+    filled_chl = numpy.ma.masked_where(filled_chl == chl_array_fill_val, filled_chl)
+
+    logger.info("mask post concatenation")
+    logger.info(filled_chl.mask.any())
 
     ds.variables['filled_chl'].setncattr("units", "mg chl m^3")
     ds.variables['filled_chl'][:] = filled_chl[:]
@@ -1181,11 +1190,14 @@ def chunk_by_chunk(chunk_idx, chunk):
 
     chl_lock.acquire()
     chl_array = chl_ds.variables[chl_variable][slc]
+
     chl_lons = chl_ds.variables[chl_lon_var][x[0]:x[1]]
     chl_lats = chl_ds.variables[chl_lat_var][y[0]:y[1]]
     #mask if it isn't, else will raise errors
-    if not numpy.ma.is_masked(chl_array):
-        chl_array = numpy.ma.masked_array(chl_array, numpy.isnan(chl_array))
+    chl_array = numpy.ma.masked_array(chl_array, numpy.isnan(chl_array))
+    chl_array = numpy.ma.masked_where(chl_array == chl_array.fill_value, chl_array)
+    chl_array = numpy.ma.masked_where(chl_array <= 0, chl_array)
+    chl_array = numpy.ma.masked_invalid(chl_array)
     if chl_array.mask.all():
         logger.info(numpy.isnan(chl_array).all())
         logger.info("skipping as empty")
@@ -1198,9 +1210,7 @@ def chunk_by_chunk(chunk_idx, chunk):
     chl_lock.release()
     if args.reshape:
         chl_array.shape = (chl_array.shape[0], 1, chl_array.shape[1], chl_array.shape[2])
-
-    #check if there are any nans in the data
-    chl_array = numpy.ma.masked_invalid(chl_array)
+    
     logger.info("making temp storage")
     os.mkdir(os.path.join(numpy_storage,str(chunk_idx)))
 
@@ -1279,8 +1289,10 @@ def chunk_by_chunk(chunk_idx, chunk):
         logger.error("quitting!")
         sys.exit()
     if not isinstance(filled_chl.mask, numpy.ndarray):
+        logger.error(filled_chl.mask)
         logger.error("chl data has no mask for its variable data, this will completely break our logic")
         sys.exit()
+        return
     #simple regridding
     create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_maxval.nc"), median=chl_median, std=chl_std_dev)
     create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_date.nc"), date=True, median=chl_median, std=chl_std_dev)

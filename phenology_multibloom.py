@@ -31,7 +31,7 @@ LON_IDX = 3
 REF_MONTH = 'January'
 END_MONTH = 'December'
 USE_DTYPE = "float64"
-DEFAULT_CHUNKS = 200
+DEFAULT_CHUNKS = 50
 
 output_location = None
 output_location_date = None
@@ -294,8 +294,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
     #chuck out the results
     logger.debug("updated highs and lows after filtering and correcting for missing dates")
-    logger.debug("highs: {}".format(*highs))
-    logger.debug("lows: {}".format(*lows))
+    logger.debug("highs: {}".format(numpy.array2string(numpy.array(highs))))
+    logger.debug("lows: {}".format(numpy.array2string(numpy.array(lows))))
     period_chl_phenology = get_start_index_and_duration(chl_sbx_slice,chl_slice,0,depth=5,verbose=verbose)
 
     high_records = []
@@ -342,15 +342,82 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     blooms_by_date = []
     logger.debug("performing year filtering from {}".format(start_date))
     #remove any year that doesn't have full 12 months of coverage
-    for year, year_start_index in reversedEnumerate(list(reversed(list(range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year))))):
+    for year, year_start_index in enumerate(range(start_date, chl_sbx_slice.shape[0], date_seperation_per_year)):
         logger.debug("doing year {}".format(year))
+        logger.debug("this year starts on {}".format(year_start_index))
+        logger.debug("this year ends on {}".format(year_start_index+date_seperation_per_year))
         if year_start_index + date_seperation_per_year > chl_sbx_slice.shape[0]:
             continue
+
+
+        sst_highs= [high for high in highs if high > year_start_index and high < (year_start_index + date_seperation_per_year)]
+        sst_lows = [low for low in lows if low > year_start_index and low < (year_start_index + date_seperation_per_year)]
+
+        try:
+            last_high = max(sst_highs)
+            first_high = min(sst_highs)
+            last_high_end = next(x for x in lows if x > last_high)
+            pre_high_start = next(x for x in reversed(lows) if x < first_high)
+        except:
+            first_high = -1000
+            last_high = -1000
+            last_high_end = -1000
+            pre_high_start = -1000
+        
+        try:
+            first_low = min(sst_lows)
+            last_low = max(sst_lows)
+            last_low_end = next(x for x in highs if x > last_low)
+            pre_low_start = next(x for x in reversed(highs) if x < first_low)
+        except:
+            first_low = -1000
+            last_low = -1000
+            pre_low_start= -1000
+            last_low_end = -1000
+
+
+        if last_high_end > last_low_end:
+            forward_search = (last_high_end - (year_start_index + date_seperation_per_year)) + 1
+        else:
+            forward_search = (last_low_end - (year_start_index + date_seperation_per_year)) + 1
+
+        if forward_search == -1000:
+            forward_search = 0
+
+        logger.debug("forward search is: {}".format(forward_search))
+
+        logger.debug("lows for this year: {}".format(numpy.array2string(numpy.array(sst_lows))))
+        logger.debug("highs for this year: {}".format(numpy.array2string(numpy.array(sst_highs))))
+
+        logger.debug("first low start: {}".format(first_low))
+        logger.debug("high start before first low start: {}".format(pre_low_start))
+        logger.debug("last high end: {}".format(last_high_end))
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
         #this is where I have concerns that there are problems with the selection of blooms, if we're doing a year with reference month of June
         #then this currently selects june - june, rather than january - december, is this correct? The central month 
-        possible_high_blooms = [x for x in high_records if x[3] > year and x[3] < (year_start_index + date_seperation_per_year) and not x[0] < (year_start_index - reverse_search)]
-        possible_low_blooms = [x for x in low_records if x[3] > year and x[3] < (year_start_index + date_seperation_per_year) and not x[0] < (year_start_index - reverse_search)]
+        possible_high_blooms = [x for x in high_records if x[3] > year_start_index and x[3] < (year_start_index + date_seperation_per_year + forward_search) and not x[0] < (year_start_index - reverse_search)]
+        possible_low_blooms = [x for x in low_records if x[3] > year_start_index and x[3] < (year_start_index + date_seperation_per_year + forward_search) and not x[0] < (year_start_index - reverse_search)]
+
+        logger.debug("possible_high_blooms pre filtering")
+        logger.debug(possible_high_blooms)
+        logger.debug("possible_low_blooms pre filtering")
+        logger.debug(possible_low_blooms)
+
+
+        #if there is a high that straddles the years
+        if pre_low_start:
+            if pre_low_start < year_start_index:
+                if abs(pre_low_start - year_start_index) > abs(first_low - year_start_index):
+                    # if the high "belongs" to the previous year (ie the majority of it resides in the last year) then we should discount any highs that occur in there
+                    possible_high_blooms = [x for x in possible_high_blooms if x[3] > first_low]
+
+        #if there is a low that straddles the years
+        if pre_high_start:
+            if pre_high_start < year_start_index:
+                if abs(pre_high_start - year_start_index) > abs(first_high - year_start_index):
+                    # if the low "belongs" to the previous year (ie the majority of it resides in the last year) then we should discount any highs that occur in there
+                    possible_high_blooms = [x for x in possible_low_blooms if x[3] > first_high]
+
 
         #test the start date, and the end date, if the start and end date are roughly equal
         #select the next max bloom

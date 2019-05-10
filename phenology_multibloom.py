@@ -31,7 +31,7 @@ LON_IDX = 3
 REF_MONTH = 'January'
 END_MONTH = 'December'
 USE_DTYPE = "float64"
-DEFAULT_CHUNKS = 50
+DEFAULT_CHUNKS = 200
 
 output_location = None
 output_location_date = None
@@ -367,7 +367,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         try:
             first_low = min(sst_lows)
             last_low = max(sst_lows)
-            last_low_end = next(x for x in highs if x > last_low)
+            last_low_end = next(x for x in highs if x > last_low and x != last_low)
             pre_low_start = next(x for x in reversed(highs) if x < first_low)
         except:
             first_low = -1000
@@ -377,8 +377,10 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
 
         if last_high_end > last_low_end:
+            logger.debug("selected high end")
             forward_search = (last_high_end - (year_start_index + date_seperation_per_year)) + 1
         else:
+            logger.debug("selected low end")
             forward_search = (last_low_end - (year_start_index + date_seperation_per_year)) + 1
 
         if forward_search == -1000:
@@ -391,7 +393,10 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
         logger.debug("first low start: {}".format(first_low))
         logger.debug("high start before first low start: {}".format(pre_low_start))
+        logger.debug("first high start: {}".format(first_high))
+        logger.debug("low start before first high start: {}".format(pre_high_start))
         logger.debug("last high end: {}".format(last_high_end))
+        logger.debug("last low end: {}".format(last_low_end))
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
         #this is where I have concerns that there are problems with the selection of blooms, if we're doing a year with reference month of June
         #then this currently selects june - june, rather than january - december, is this correct? The central month 
@@ -416,7 +421,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             if pre_high_start < year_start_index:
                 if abs(pre_high_start - year_start_index) > abs(first_high - year_start_index):
                     # if the low "belongs" to the previous year (ie the majority of it resides in the last year) then we should discount any highs that occur in there
-                    possible_high_blooms = [x for x in possible_low_blooms if x[3] > first_high]
+                    possible_low_blooms = [x for x in possible_low_blooms if x[3] > first_high]
 
 
         #test the start date, and the end date, if the start and end date are roughly equal
@@ -1560,7 +1565,7 @@ if __name__ == "__main__":
 
         debug_pixel_main = [[debug_pixel_main[0] - chunk[0][0], debug_pixel_main[1] - chunk[1][0], chunk_idx] for chunk_idx, chunk in enumerate(chunks) if chunk[0][0] < debug_pixel_main[0] and chunk[0][1] > debug_pixel_main[0] and chunk[1][0] < debug_pixel_main[1] and chunk[1][1] > debug_pixel_main[1]][0]
         logger.info(debug_pixel_main)
-        logger.info("using debug pixel: {} which equates to: {} N {} E (zero indexed so you may need to add 1 to get reference in other software)".format(debug_pixel, chl_lats[debug_pixel_main[1]], chl_lons[debug_pixel_main[0]]))
+        logger.info("using debug pixel: {} which equates to: {} N {} E (zero indexed so you may need to add 1 to get reference in other software)".format(debug_pixel, chl_lats[debug_pixel_main[0]], chl_lons[debug_pixel_main[1]]))
         
         debug_pixel_only = args.debug_pixel_only
 

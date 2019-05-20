@@ -112,7 +112,10 @@ def output_variables_as_pngs(in_file, reference_date, variable_names=None, speci
                 g1.xlabels_top = False
                 g1.xlabel_style = {'size': 2, 'color': 'gray'}
                 g1.ylabel_style = {'size': 2, 'color': 'gray'}
-                plt.title("{} average".format(variable), fontsize=20)
+                if specified_year:
+                    plt.title("{}".format(variable), fontsize=20)
+                else:
+                    plt.title("{} average".format(variable), fontsize=20)
                 #plt.savefig('{}_{}_plot_vals.png'.format(in_file_bname,variable), dpi=100)
                 pdf.savefig(fig1)
                 plt.close()

@@ -34,17 +34,20 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
     plt.plot(x, ser, color='blue', label="filled chl")
     ser =  t.variables["chl_boxcar"][start:stop,:,lat_idx,lon_idx]
     x = range(start, stop)
-    plt.plot(x, ser, color='red', label="smoothed filled chl")
+    plt.plot(x, ser, color='red', label="chl boxcar")
     #add vertical lines for start (red) and end (green) of each year
     last_start = None
     last_end = None
     last_date_start = None
     last_date_start_two = None
     print(list(range(start_index, stop, date_seperation_per_year)))
+    year_indx_offset = start_index // date_seperation_per_year
+    print(year_indx_offset)
     for year_indx, year in enumerate(range(start_index, stop, date_seperation_per_year)):
         print(year_indx)
         if not (year >= start and year < stop):
             continue
+        year_indx += year_indx_offset - 1
         last_start = plt.axvline(x=year, color='red')
         last_end = plt.axvline(x=year +  date_seperation_per_year -1, color='green')
         date_start =  timings.variables["date_start1"][year_indx,:,lat_idx,lon_idx]
@@ -53,7 +56,7 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
         duration =  timings.variables["duration1"][year_indx,:,lat_idx,lon_idx]
         if not numpy.ma.is_masked(date_start) and not (date_start+year >stop and date_stop < start):
             last_date_start = plt.axvline(x=year + date_start, color='yellow')
-            plt.axvline(x=year + date_max - 1, color='yellow')
+            plt.axvline(x=year + date_max + 1, color='yellow')
             print("primary")
             print(date_start, date_max, date_end)
             plt.axvline(x=year + date_end, color='yellow')
@@ -63,7 +66,7 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
         duration =  timings.variables["duration2"][year_indx,:,lat_idx,lon_idx]
         if not numpy.ma.is_masked(date_start)  and not (date_start+year >stop and date_stop < start):
             last_date_start_two = plt.axvline(x=year + date_start, color='purple')
-            plt.axvline(x=year + date_max -1, color='purple')
+            plt.axvline(x=year + date_max + 1, color='purple')
             print("secondary")
             print(date_start, date_max, date_end)
             plt.axvline(x=year + date_end, color='purple')

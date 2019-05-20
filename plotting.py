@@ -101,6 +101,14 @@ def main(args):
             list_of_years = list(range(args.specify_years[0], args.specify_years[1] + 1))
         else:
             list_of_years = [args.specify_years[0]]
+    else:
+        list_of_years = [year_idx for year_idx, year in enumerate(range(time_start, time_full, steps_per_year))]
+
+    print(list_of_years)
+    time_full = [year for year_idx, year in enumerate(range(time_start, time_full, steps_per_year)) if year_idx == max(list_of_years)][0]
+    time_start = [year for year_idx, year in enumerate(range(time_start, time_full, steps_per_year)) if year_idx == min(list_of_years)][0]
+
+    print(time_start, time_full)
 
 
     with PdfPages(output_file) as pdf:
@@ -109,9 +117,6 @@ def main(args):
             gen_plots(args.phen_file, float(point[0]), float(point[1]), time_start, time_full, pdf, start_index=time_start, date_seperation_per_year=steps_per_year)
             if not args.skip_individual_years:
                 for year_indx, year in enumerate(range(time_start, time_full, steps_per_year)):
-                    print(year)
-                    if not year_indx in list_of_years:
-                        continue
                     gen_plots(args.phen_file, float(point[0]), float(point[1]), year, year+steps_per_year, pdf, xsize=6, ysize=6,start_index=time_start, date_seperation_per_year=steps_per_year)
 
 

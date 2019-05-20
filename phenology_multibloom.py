@@ -1398,7 +1398,9 @@ def get_ds_time_data(ds, time_var, begin_date=False, var="chl"):
             init_date = datetime.datetime.strptime(begin_date, '%d/%m/%Y')
             start_datetime = datetime.datetime(year=init_date.year,month=1,day=1) + datetime.timedelta(days=(365 * (start_date / date_seperation_per_year)))
             ref_date =  datetime.datetime(year=init_date.year,month=1,day=1) + datetime.timedelta(days=(365 * (start_date +ref_index / date_seperation_per_year)))
-            end_date = datetime.datetime(year=init_date.year,month=1,day=1) + datetime.timedelta(days=(ds[time_var].shape[0] * (365 / date_seperation_per_year)))
+            logger.info("number of days between start and end")
+            logger.info(ds[time_var].shape[0] * math.ceil(365 / date_seperation_per_year))
+            end_date = init_date + datetime.timedelta(days=(ds[time_var].shape[0] * math.ceil(365 / date_seperation_per_year)))
         logger.info(ref_date)
         REF_MONTH = ref_date.strftime("%d %B")
         START_YEAR = start_datetime.year
@@ -1410,9 +1412,10 @@ def get_ds_time_data(ds, time_var, begin_date=False, var="chl"):
 
         logger.info("getting {} missing timesteps".format(var))
         start_difference = init_date - datetime.datetime(year=init_date.year, month=1, day=1)
+        logger.info(end_date)
         end_difference =  datetime.datetime(year=end_date.year, month=12, day=31) - end_date
-        missing_dates_at_start = start_difference.days//8
-        missing_dates_at_end = end_difference.days//8
+        missing_dates_at_start = start_difference.days// math.ceil(365 / date_seperation_per_year)
+        missing_dates_at_end = end_difference.days// math.ceil(365 / date_seperation_per_year)
         logger.info("missing steps to january at start of file: {}".format(missing_dates_at_start))
         logger.info("missing steps to december at end of file: {}".format(missing_dates_at_end))
     except Exception as e:

@@ -226,7 +226,7 @@ def phen_records_to_one_val_on_max(records, year_start_index=0, index=4, verbose
 def polarity_edge_finder(input_array):
     return (numpy.diff(numpy.sign(input_array)) != 0)*1
 
-def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_seperation_per_year, reverse_search, start_date=0, reference_date=0, verbose=False, skip_end_year=False, end_date=None):
+def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_seperation_per_year, reverse_search, start_date=0, reference_date=0, verbose=False, skip_end_year=False, processing_end_date=None, one_year_climato=False):
     """
     Attributes the start and end times in relation to the SST or solar cycle, takes an sst array (array_like), smoothed chlorophyll derivative slice (chl_sbx_slice) and the original chlorophyll data.
 
@@ -236,16 +236,18 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     in a run using global data that too 30 minutes, this function made up 703 seconds of the processing time
     I would guess that 500 of those seconds can be attributed to get_start_index_and_duration
     """ 
-    if not end_date:
-        end_date = chl_sbx_slice.shape[0]
+    if not processing_end_date:
+        processing_end_date = chl_sbx_slice.shape[0]
         if skip_end_year:
-            end_date - date_seperation_per_year
-    logger.info
+            processing_end_date = processing_end_date - date_seperation_per_year
+
+    logger.debug(f"using start date of {start_date} and end date of {processing_end_date}")
+
     if array_like.mask.all():
         logger.info("array all -32616.30273438")
         logger.info(array_like)
         #we can stop here, there's no point continuing with an empty array
-        return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, end_date, date_seperation_per_year) if not x + date_seperation_per_year > end_date],[[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, end_date, date_seperation_per_year) if not x + date_seperation_per_year > end_date]
+        return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, processing_end_date, date_seperation_per_year) if not x + date_seperation_per_year > processing_end_date],[[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, processing_end_date, date_seperation_per_year) if not x + date_seperation_per_year > processing_end_date]
 
     #possibly resort and create new durations based on remaining dates
     #look for sign changes in sst or PAR data, indicating high/low SST or light periods
@@ -299,7 +301,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         elif len(lows) and not len(highs):
             highs = [0, len(array_like)]
         else:
-            return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, end_date, date_seperation_per_year) if not x + date_seperation_per_year > end_date],[[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, end_date, date_seperation_per_year) if not x + date_seperation_per_year > end_date]
+            return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, processing_end_date, date_seperation_per_year) if not x + date_seperation_per_year > processing_end_date],[[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, processing_end_date, date_seperation_per_year) if not x + date_seperation_per_year > processing_end_date]
     except Exception as e:
         #triggered once, but was helpful to know what the contents were
         logger.error(highs)
@@ -356,34 +358,51 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     blooms_by_date = []
     logger.debug("performing year filtering from {}".format(start_date))
     #remove any year that doesn't have full 12 months of coverage
-    for year, year_start_index in enumerate(range(start_date, end_date, date_seperation_per_year)):
+    logger.debug("list of years being considered:")
+    logger.debug(list(enumerate(range(start_date, processing_end_date, date_seperation_per_year))))
+    for year, year_start_index in enumerate(range(start_date, processing_end_date, date_seperation_per_year)):
         logger.debug("doing year {}".format(year))
         logger.debug("this year starts on {}".format(year_start_index))
         logger.debug("this year ends on {}".format(year_start_index+date_seperation_per_year))
-        if year_start_index + date_seperation_per_year > end_date:
-            continue
+        logger.debug(f"our end date is {processing_end_date}")
+        if ((year_start_index + date_seperation_per_year) > processing_end_date) or (year_start_index >= processing_end_date):
+            logger.debug("skipping year as start or end are greater than end date")
+            break
 
 
         sst_highs= [high for high in highs if high > year_start_index and high < (year_start_index + date_seperation_per_year)]
         sst_lows = [low for low in lows if low > year_start_index and low < (year_start_index + date_seperation_per_year)]
 
         try:
+            logger.debug("doing high start end detection")
             last_high = max(sst_highs)
+            logger.debug(last_high)
             first_high = min(sst_highs)
+            logger.debug(first_high)
             last_high_end = next(x for x in lows if x > last_high)
+            logger.debug(last_high_end)
             pre_high_start = next(x for x in reversed(lows) if x < first_high) 
-        except:
+            logger.debug(pre_high_start)
+        except Exception as e:
+            logger.debug(e)
             first_high = -1000
             last_high = -1000
             last_high_end = -1000
             pre_high_start = -1000
         
         try:
+            logger.debug("doing low start end detection")
             first_low = min(sst_lows)
+            logger.debug(first_low)
             last_low = max(sst_lows)
+            logger.debug(last_low)
+            logger.debug(highs)
             last_low_end = next(x for x in highs if x > last_low and x != last_low)
+            logger.debug(last_low_end)
             pre_low_start = next(x for x in reversed(highs) if x < first_low)
-        except:
+            logger.debug(pre_low_start)
+        except Exception as e:
+            logger.debug(e)
             first_low = -1000
             last_low = -1000
             pre_low_start= -1000
@@ -1081,7 +1100,7 @@ def get_multi_year_two_blooms_output(numpy_storage, chunk, chl_shape, chl_dtype,
     if not end_date:
         end_date = chl_boxcar.shape[0]
         if extend_array:
-            end_date - date_seperation_per_year
+            end_date = end_date - date_seperation_per_year
     logger.info(sst_dtype)
     sst_der = numpy.memmap(os.path.join(numpy_storage, str(chunk), "sst_der"), mode="r", dtype=USE_DTYPE, shape=sst_shape)
     sst_der = sst_der.copy()
@@ -1100,7 +1119,7 @@ def get_multi_year_two_blooms_output(numpy_storage, chunk, chl_shape, chl_dtype,
     logger.info("output array shape expecting to write = {}".format((chl_data.shape[2],chl_data.shape[3], int((end_date - start_date) // date_seperation_per_year), 2,5)))
     year_true_start_end_array = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int((end_date - start_date) // date_seperation_per_year), 2,5))
 
-    logger.info("number of years expecting to write = {}".format(int((chl_data.shape[0] -start_date) // date_seperation_per_year)))
+    logger.info("number of years expecting to write = {}".format(int((end_date -start_date) // date_seperation_per_year)))
     total_blooms = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int((chl_data.shape[0] - start_date) // date_seperation_per_year)))
     year_true_start_end_array.fill(FILL_VAL)
     blooms_by_date = year_true_start_end_array.copy()
@@ -1128,7 +1147,7 @@ def get_multi_year_two_blooms_output(numpy_storage, chunk, chl_shape, chl_dtype,
                                                      verbose=verbose, 
                                                      start_date=start_date, 
                                                      reference_date=reference_index,
-                                                     skip_end_year=extend_array)
+                                                     processing_end_date=end_date)
             year_true_start_end_array[ix,iy] = results[0]
             total_blooms[ix,iy] = results[1]
             blooms_by_date[ix, iy] = results[2]
@@ -1153,7 +1172,9 @@ def get_multi_year_two_blooms_output(numpy_storage, chunk, chl_shape, chl_dtype,
                                            reverse_search, 
                                            verbose=False, 
                                            start_date=start_date, 
-                                           reference_date=reference_index)
+                                           reference_date=reference_index,
+                                           end_date=end_date)
+
         """
         if ix in completion_points and iy == 0:
             logger.info(completion_points.index(ix) * 10, "% complete")
@@ -1344,7 +1365,8 @@ def chunk_by_chunk(chunk_idx, chunk):
         sst_lock.release()
 
         if args.extend_sst_data:
-            sst_array, _ = extend_array(sst_array, date_seperation_per_year, chunk_start_date)
+            logger.debug("extending sst array by repeating year at start and end")
+            sst_array, _ = extend_array(sst_array, date_seperation_per_year, start_date)
 
         if len(sst_array.shape) == 3:
             logger.info("reshaping sst to {}".format((sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])))

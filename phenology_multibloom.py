@@ -43,7 +43,6 @@ logging.basicConfig()
 logger = logging.getLogger("phenology_logger")
 logger.setLevel(logging.DEBUG)
 
-numpy_storage=None
 
 def find_maxes(array_like):
     max_indexes = argrelextrema(array_like, numpy.greater)
@@ -592,7 +591,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
     return blooms, ngds, blooms_by_date, ngds_date, total_blooms
 
-def prepare_sst_variables(sst_array, numpy_storage, chunk, skip=False, chunk_idx=None, output_name=None):
+def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_name=None):
     """
     Creates smoothed sst, currently has a large portion commented out as source file
      is already the centered derivative diff data.
@@ -610,11 +609,12 @@ def prepare_sst_variables(sst_array, numpy_storage, chunk, skip=False, chunk_idx
         logger.info("shape after sst sbx")
         logger.info(sst_boxcar.shape)
         fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])), mask=numpy.ones((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])))
-        sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, str(chunk), "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=USE_DTYPE)
-        sst_boxcar_map[:] = sst_boxcar[:]
-        sst_boxcar = None
-        sst_boxcar = sst_boxcar_map
-        sst_boxcar_map = None
+        #sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, str(chunk), "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=USE_DTYPE)
+        ds.createVariable('sst_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
+        ds.variables['sst_boxcar'].setncattr("units", "degrees celsius")
+        ds.variables['sst_boxcar'][:] = sst_boxcar[:]
+
+        ds.close()
         #get sst derivative
         logger.info("doing sst_derivative")
         sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar[5:,:,:,:])
@@ -646,18 +646,17 @@ def prepare_sst_variables(sst_array, numpy_storage, chunk, skip=False, chunk_idx
     
 
     sst_der = numpy.ma.concatenate(start_fill_arrays + [sst_der] + end_fill_arrays)
-
+    ds = nc.Dataset(output_name.replace(".nc", "_intermediate_products.nc".format(chunk_idx)), 'r+', format='NETCDF4_CLASSIC')
     ds.createVariable('sst_der', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['sst_der'].setncattr("units", "deg C")
     ds.variables['sst_der'][:] = sst_der[:]
     ds.close()
-    sst_der_map = numpy.memmap(os.path.join(numpy_storage, str(chunk), "sst_der"), mode="w+", shape=sst_der.shape, dtype=USE_DTYPE)
-    sst_der_map[:] = sst_der[:]
+
 
     logger.info("sst prep complete")
     return sst_der.shape, 'float64'
 
-def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_lats, chl_lons, modelled_threshold=False, median_threshold=1.2, relative_max_anomaly=False, relative_median_anomaly=False, dynamic_max_means_threshold=0.25, max_means_threshold=0.2, median_filename="median_output.nc", do_fill_chl=True, std_dev_anomaly=False,  max_means_anomaly=False, std_dev_threshold=STD_DEV_THRESHOLD_DEFAULT, chunk_idx=None, output_name=None, date_seperation_per_year=0):
+def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons, modelled_threshold=False, median_threshold=1.2, relative_max_anomaly=False, relative_median_anomaly=False, dynamic_max_means_threshold=0.25, max_means_threshold=0.2, median_filename="median_output.nc", do_fill_chl=True, std_dev_anomaly=False,  max_means_anomaly=False, std_dev_threshold=STD_DEV_THRESHOLD_DEFAULT, chunk_idx=None, output_name=None, date_seperation_per_year=0):
     """
     Creates the smoothed anomaly chlorophyll data, saves a file to the temporary directory that is read as a mem map later to conserve resources.
     """
@@ -921,9 +920,6 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
 
     logger.info("chl boxcar shape after padding")
     logger.info(chl_boxcar.shape)
-
-    chl_boxcar_map = numpy.memmap(os.path.join(numpy_storage, str(chunk), "chl_sbx"), mode="w+", shape=chl_boxcar.shape, dtype=USE_DTYPE)
-    chl_boxcar_map[:] = chl_boxcar[:]
     
     ds.createVariable('chl_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
     ds.variables['chl_boxcar'].setncattr("units", "mg chl m^3")
@@ -931,9 +927,6 @@ def prepare_chl_variables(chl_array, numpy_storage, chunk, date_seperation, chl_
 
     ds.close()
 
-    chl_boxcar = None
-    chl_boxcar = chl_boxcar_map
-    chl_boxcar_map = None
     logger.info("chl prep complete")
     return chl_boxcar.shape, USE_DTYPE, chl_median, std_dev, max_means, perc_val_change, filled_chl
 
@@ -1080,30 +1073,32 @@ def create_intermediate_netcdf(output_name, chl_lons, chl_lats):
     ds.variables['chl_der'].setncattr("units", "mg chl m^3")
     ds.createVariable('chl_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=zlib_compression)
     ds.variables['chl_boxcar'].setncattr("units", "mg chl m^3")
+    ds.createVariable('sst_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=zlib_compression)
+    ds.variables['sst_boxcar'].setncattr("units", "degrees celsius")
+    ds.createVariable('sst_der', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=zlib_compression)
+    ds.variables['sst_der'].setncattr("units", "degrees celsius")
     ds.close()
 
 
 def total_blooms_to_probability(array_like):
     return numpy.count_nonzero(array_like == 2) / array_like.size
 
-def get_multi_year_two_blooms_output(numpy_storage, chunk, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=47, start_date=0, reverse_search=20, reference_index=0, out_netcdf=output_location, out_date_netcdf=output_location_date, chunk_idx=None, end_date=False):
+def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=47, start_date=0, reverse_search=20, reference_index=0, out_netcdf=output_location, out_date_netcdf=output_location_date, chunk_idx=None, end_date=False):
     #this all works on the assumption the axis 0 is time
     global debug_pixel_main
     global extend_array
 
-
+    ds = nc.Dataset(output_name.replace(".nc", "_intermediate_products.nc".format(chunk)),'r',format='NETCDF4_CLASSIC')
     
     logger.info("reading variables")
-    chl_boxcar = numpy.memmap(os.path.join(numpy_storage, str(chunk), "chl_sbx"), mode="r", dtype=USE_DTYPE, shape=chl_shape)
-    chl_boxcar = chl_boxcar.copy()
+    chl_boxcar = ds.variables["chl_boxcar"][:]
 
     if not end_date:
         end_date = chl_boxcar.shape[0]
         if extend_array:
             end_date = end_date - date_seperation_per_year
     logger.info(sst_dtype)
-    sst_der = numpy.memmap(os.path.join(numpy_storage, str(chunk), "sst_der"), mode="r", dtype=USE_DTYPE, shape=sst_shape)
-    sst_der = sst_der.copy()
+    sst_der = ds.variables["sst_der"][:]
     logger.info("shapes after reading sst: {} chl: {}".format(chl_boxcar.shape, sst_der.shape))
     logger.info("reshaping to sst: {} chl: {}".format(sst_shape, chl_shape))
     sst_der.shape = sst_shape
@@ -1259,7 +1254,6 @@ def chunk_by_chunk(chunk_idx, chunk):
     global args
     global start_date
     global debug_chunk
-    global numpy_storage
     global do_only_debug_chunk
 
     chunk_start_date = start_date
@@ -1302,7 +1296,6 @@ def chunk_by_chunk(chunk_idx, chunk):
         chl_array.shape = (chl_array.shape[0], 1, chl_array.shape[1], chl_array.shape[2])
     
     logger.info("making temp storage")
-    os.mkdir(os.path.join(numpy_storage,str(chunk_idx)))
 
     """
     if not (chl_array.shape[2] == chl_lats.shape[0] and chl_array.shape[3] == chl_lons.shape[0]):
@@ -1314,7 +1307,6 @@ def chunk_by_chunk(chunk_idx, chunk):
         logger.info("start date after extension: {}".format(chunk_start_date))
 
     chl_shape, chl_dtype, chl_median, chl_std_dev, chl_max_means, perc_val_change, filled_chl = prepare_chl_variables(chl_array, 
-                                                                          numpy_storage,
                                                                           chunk_idx, 
                                                                           date_seperation_per_year, 
                                                                           chl_lats, 
@@ -1372,7 +1364,7 @@ def chunk_by_chunk(chunk_idx, chunk):
             logger.info("reshaping sst to {}".format((sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])))
             sst_array.shape = (sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])
 
-        sst_shape, sst_dtype = prepare_sst_variables(sst_array, numpy_storage, chunk_idx, skip=args.skip_sst_prep,chunk_idx=chunk_idx, output_name=output)
+        sst_shape, sst_dtype = prepare_sst_variables(sst_array, chunk_idx, skip=args.skip_sst_prep,chunk_idx=chunk_idx, output_name=output)
         logger.info("sst_shape: {}".format(sst_shape))
         logger.info("sst_dtype: {}".format(USE_DTYPE))
         sst_array = None
@@ -1392,7 +1384,7 @@ def chunk_by_chunk(chunk_idx, chunk):
     create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_maxval.nc"), median=chl_median, std=chl_std_dev, max_means=chl_max_means, perc_val_change=perc_val_change)
     create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_date.nc"), date=True, median=chl_median, std=chl_std_dev, max_means=chl_max_means, perc_val_change=perc_val_change)
     logger.info("using start date {}".format(chunk_start_date))
-    get_multi_year_two_blooms_output(numpy_storage, 
+    get_multi_year_two_blooms_output(output,
                                     chunk_idx,
                                     chl_shape,
                                     chl_dtype, 
@@ -1408,7 +1400,6 @@ def chunk_by_chunk(chunk_idx, chunk):
                                     chunk_idx=chunk_idx)
     
     logger.setLevel(default_logging)
-    shutil.rmtree(os.path.join(numpy_storage,str(chunk_idx)))
     return True
 
 def ds_to_dim_vars(ds):
@@ -1506,7 +1497,6 @@ if __name__ == "__main__":
     parser.add_argument("--first_date_index", help="Specify if the first date you want to include is not the first date present in the date stack.", default=1, required=False)
     parser.add_argument("--reference_index", help="Date index in relation to first_date_index to use as the reference from which weeks are measured in the phenology output. If specified is used as first_date_index + reference_index, if not set will measure from first_date_index (default 1)", default=1, required=False)
     parser.add_argument("--chl_climatology", action="store_true", help="extend the input chlorophyll array by creatingidentical copied for the year previous and year next", default=0, required=False)
-    parser.add_argument("--intermediate_file_store", help="change where intermediate numpy files are placed, if not specified then /tmp is assumed - you should specify somewhere else if your tmp cannot handle the array sizes needed (and currently this program will fill it until it cannot).", required=False)
     parser.add_argument("--reverse_search", default=False, help="specify the number of observations to search in the previous year, if not specified will be calculated as a representation of 100 days (date_seperation_per_year / 0.27).", required=False)
     parser.add_argument("--skip_sst_prep", action="store_true", default=False, help="skip sst preparation, instead the program will assume that the sst input is already in a state where low/high period fluctuation can be identified", required=False)
     parser.add_argument("--median_threshold", default=MEDIAN_THRESHOLD_DEFAULT, help="change median threshold, set as percentage value e.g. 20 = 20", required=False)
@@ -1567,13 +1557,6 @@ if __name__ == "__main__":
     max_means_threshold = float(args.max_means_threshold) / 100
     do_rel_max = args.rel_max_means
     do_rel_med_anomaly = args.rel_median
-    if not args.intermediate_file_store:
-        numpy_storage = tempfile.mkdtemp(prefix="phenology_")
-    else:
-        numpy_storage = args.intermediate_file_store
-        if os.path.exists(numpy_storage):
-            shutil.rmtree(numpy_storage)
-        os.mkdir(numpy_storage)
     #remember to change median threshold to percentage!
     #reverse search should be ratio of 100 days so 5 days * 20 = 100 or 8 days * 12.5 (so 13) = 100 days
     #as 100 days is 0.27 of 365 we can just do that
@@ -1792,8 +1775,8 @@ if __name__ == "__main__":
             logger.error("problem found in files {}".format(intermediate_ds))
             continue
         for chunk_idx, chunk in enumerate(tqdm.tqdm(chunks)):
-            logger.error("on chunk")
-            logger.error(chunk_idx)
+            logger.info("on chunk")
+            logger.info(chunk_idx)
             intermediate_chunk_file = [x for x in intermediate_files if "chunk{}_".format(chunk_idx) in x]
             if len(intermediate_chunk_file):
                 slc = [slice(None)] * 4

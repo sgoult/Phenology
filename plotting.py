@@ -34,7 +34,10 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
     plt.plot(x, ser, color='blue', label="filled chl")
     ser =  t.variables["chl_boxcar"][start:stop,:,lat_idx,lon_idx]
     x = range(start, stop)
-    plt.plot(x, ser, color='red', label="chl boxcar")
+    plt.plot(x, ser, color='green', label="chl boxcar")
+    ser =  t.variables["sst_der"][start:stop,:,lat_idx,lon_idx]
+    x = range(start, stop)
+    plt.plot(x, ser, color='red', label="sst derivative")
     #add vertical lines for start (red) and end (green) of each year
     last_start = None
     last_end = None

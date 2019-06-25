@@ -117,6 +117,8 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
     global start_minimum_seperation_value
     #before we do anything else, because the boxcar method gives us an output that is 0.0 in place of nans we should increment those by 0.0001 so that the polariser can find them
     array_like[array_like==0.0] = 0.0001
+    unique, counts = numpy.unique(array_like, counts=True)
+    counts = dict(zip(unique, counts))
     #array_like = numpy.squeeze(array_like)
     #if it's all gone horribly wrong then this will quit out of it straight away
     if len(array_like):

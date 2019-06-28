@@ -34,7 +34,10 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
     plt.plot(x, ser, color='blue', label="filled chl")
     ser =  t.variables["chl_boxcar"][start:stop,:,lat_idx,lon_idx]
     x = range(start, stop)
-    plt.plot(x, ser, color='red', label="chl boxcar")
+    plt.plot(x, ser, color='green', label="chl boxcar")
+    ser =  t.variables["sst_der"][start:stop,:,lat_idx,lon_idx]
+    x = range(start, stop)
+    plt.plot(x, ser, color='red', label="sst derivative")
     #add vertical lines for start (red) and end (green) of each year
     last_start = None
     last_end = None
@@ -55,11 +58,11 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
         date_end =  timings.variables["date_end1"][year_indx,:,lat_idx,lon_idx]
         duration =  timings.variables["duration1"][year_indx,:,lat_idx,lon_idx]
         if not numpy.ma.is_masked(date_start) and not (date_start+year >stop and date_stop < start):
-            last_date_start = plt.axvline(x=year + date_start, color='yellow')
-            plt.axvline(x=year + date_max + 1, color='yellow')
+            last_date_start = plt.axvline(x=year + date_start, color='orange')
+            plt.axvline(x=year + date_max + 1, color='orange')
             print("primary")
             print(date_start, date_max, date_end)
-            plt.axvline(x=year + date_end, color='yellow')
+            plt.axvline(x=year + date_end, color='orange')
         date_start =  timings.variables["date_start2"][year_indx,:,lat_idx,lon_idx]
         date_max =  timings.variables["date_max2"][year_indx,:,lat_idx,lon_idx]
         date_end =  timings.variables["date_end2"][year_indx,:,lat_idx,lon_idx]

@@ -242,8 +242,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         if skip_end_year:
             processing_end_date = processing_end_date - date_seperation_per_year
 
-    logger.info(f"using start date of {start_date} and end date of {processing_end_date}")
-    
+    logger.debug(f"using start date of {start_date} and end date of {processing_end_date}")
+
     if array_like.mask.all():
         logger.info("array all -32616.30273438")
         logger.info(array_like)
@@ -1174,7 +1174,7 @@ def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, c
                                            verbose=False, 
                                            start_date=start_date, 
                                            reference_date=reference_index,
-                                           processing_end_date=end_date)
+                                           end_date=end_date)
 
         """
         if ix in completion_points and iy == 0:

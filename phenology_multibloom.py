@@ -95,12 +95,12 @@ End of solar zentih stuff
 def boxcar_smoothing(x, window):
    return x*window
 
-def centered_diff_derivative(array_like):
+def centered_diff_derivative(array_like, method='same'):
     """
     calculates the first derivative from centered difference
     """
     squeezed = array_like.squeeze()
-    cf = numpy.ma.convolve(squeezed, [1,0,-1],'same') / 1
+    cf = numpy.ma.convolve(squeezed, [1,0,-1],method) / 1
     return cf
 
 def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_values=False, verbose=False):
@@ -621,7 +621,7 @@ def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_n
         ds.close()
         #get sst derivative
         logger.info("doing sst_derivative")
-        sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar[:,:,:,:])
+        sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar[:,:,:,:], method='same')
         logger.info("shape after sst der")
         logger.info(sst_der.shape)
     else:
@@ -636,21 +636,23 @@ def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_n
     logger.info("this means there are {} new timesteps that must be created at the beginning and end of the sst derivitive array".format(abs(additional_steps)))
 
     
-    start_fill_arrays = [fill_arr for i in range(0, missing_sst_dates_at_start + math.floor(abs(additional_steps)))]
+    start_fill_arrays = [fill_arr for i in range(0, math.floor(abs(additional_steps)))]
 
     if not additional_steps.is_integer():
         logger.warning("as the number of new timesteps is not a whole number will pad one additional step to the beginning of the sst derivitive array")
 
-    end_fill_arrays = [fill_arr for i in range(0, missing_sst_dates_at_end + math.ceil(abs(additional_steps)))]
+    end_fill_arrays = [fill_arr for i in range(0, math.ceil(abs(additional_steps)))]
 
     logger.info((sst_der.shape[0], len(start_fill_arrays), len(end_fill_arrays)))
     if not (sst_der.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year == 0:
         logger.error("After padding, the sst derivitive end product did not divide equally! shape is {} and division is {}".format((sst_der.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)), (sst_der.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year))
         raise Exception("After padding, the sst derivitive end product did not divide equally!")
     
+    masked_world = sst_boxcar.mask[:].all(axis=0)
+    masks_arr = numpy.array([masked_world for x in range(0, sst_der.shape[0])])
+    sst_der_masked = numpy.ma.masked_where(masks_arr == True, sst_der)
 
     sst_der = numpy.ma.concatenate(start_fill_arrays + [sst_der] + end_fill_arrays)
-    sst_der = numpy.ma.masked_where(sst_der == 0, sst_der)
     sst_der = numpy.ma.filled(sst_der, fill_value=FILL_VAL)
     ds = nc.Dataset(output_name.replace(".nc", "_intermediate_products.nc".format(chunk_idx)), 'r+', format='NETCDF4_CLASSIC')
     ds.createVariable('sst_der', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)

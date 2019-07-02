@@ -43,6 +43,9 @@ logging.basicConfig()
 logger = logging.getLogger("phenology_logger")
 logger.setLevel(logging.DEBUG)
 
+def mean(list_object):
+    return sum(list_object) / len(list_object)
+
 
 def find_maxes(array_like):
     max_indexes = argrelextrema(array_like, numpy.greater)
@@ -237,6 +240,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     in a run using global data that too 30 minutes, this function made up 703 seconds of the processing time
     I would guess that 500 of those seconds can be attributed to get_start_index_and_duration
     """ 
+    global one_year_only_output
+    
     if not processing_end_date:
         processing_end_date = chl_sbx_slice.shape[0]
         if skip_end_year:
@@ -245,8 +250,6 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     logger.debug(f"using start date of {start_date} and end date of {processing_end_date}")
 
     if array_like.mask.all():
-        logger.info("array all -32616.30273438")
-        logger.info(array_like)
         #we can stop here, there's no point continuing with an empty array
         return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, processing_end_date, date_seperation_per_year) if not x + date_seperation_per_year > processing_end_date],[[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, processing_end_date, date_seperation_per_year) if not x + date_seperation_per_year > processing_end_date]
 
@@ -346,7 +349,88 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         else:
             logger.debug([x for x in period_chl_phenology if x[3] >= index and x[3] < end_date and not all(p is None for p in x)])
             low_records.extend([x for x in period_chl_phenology if x[3] >= index and x[3] < end_date and not all(p is None for p in x)])
+    
+    """
+    What follows is a large chunk of code to filter for blooms that cross the boundary of a year, we then establish the mean duration from start to end reference the year index. 
+    This is later used for the decision making logic to find which year a bloom belongs to
+    """
+    high_in_yr_one_full = []
+    high_in_yr_two_full = []
+    low_in_yr_one_full = []
+    low_in_yr_two_full = []
+    for year, year_start_index in enumerate(range(start_date, processing_end_date, date_seperation_per_year)):
+        high_in_yr_one = []
+        high_in_yr_two = []
+        low_in_yr_one = []
+        low_in_yr_two = []
+
+        possible_high_blooms = [x for x in high_records if x[3] > year_start_index and x[3] < (year_start_index + date_seperation_per_year + (date_seperation_per_year * 0.1) ) and not x[0] < (year_start_index - reverse_search)]
+        possible_low_blooms = [x for x in low_records if x[3] > year_start_index and x[3] < (year_start_index + date_seperation_per_year + (date_seperation_per_year * 0.1)) and not x[0] < (year_start_index - reverse_search)]
+
+        possible_high_blooms = [x for x in possible_high_blooms if (x[0] < year_start_index and x[1] > year_start_index)] # or (x[0] < year_start_index + date_seperation_per_year and x[1] > year_start_index + date_seperation_per_year)]
+        possible_low_blooms = [x for x in possible_low_blooms if (x[0] < year_start_index and x[1] > year_start_index)] # or (x[0] < year_start_index + date_seperation_per_year and x[1] > year_start_index + date_seperation_per_year)]
+
+        logger.debug(f"boundary year {year_start_index}")
+        logger.debug("boundary blooms")
+        logger.debug(possible_high_blooms)
+        logger.debug(possible_low_blooms)
+
+
+        if possible_high_blooms:
+            high_in_yr_one = [year_start_index - x[0] for x in possible_high_blooms]
+            high_in_yr_two = [x[1] - year_start_index for x in possible_high_blooms]
+
+
+        if possible_low_blooms:
+            low_in_yr_one = [year_start_index - x[0] for x in possible_low_blooms]
+            low_in_yr_two = [x[1] - year_start_index for x in possible_low_blooms]
+
+
+        high_in_yr_one_full.extend(high_in_yr_one)
+        high_in_yr_two_full.extend(high_in_yr_two)
+        low_in_yr_one_full.extend(low_in_yr_one) 
+        low_in_yr_two_full.extend(low_in_yr_two)
         
+
+        possible_high_blooms = None
+        possible_low_blooms = None
+
+    test_for_high_boundary_blooms = False
+    high_boundary_blooms_in_year = False
+    logger.debug("boundary durations")
+    logger.debug(high_in_yr_one_full)
+    logger.debug(low_in_yr_one_full)
+    logger.debug("end boundary durations")
+
+    if high_in_yr_one_full:
+        test_for_high_boundary_blooms = True
+        high_year_one_mean = mean(high_in_yr_one_full)
+        high_year_two_mean = mean(high_in_yr_two_full)
+
+        logger.debug(f"high blooms cover year boundary")
+        if high_year_one_mean > high_year_two_mean:
+            #the blooms crossing the year are predominantly in the first year, rather than the second
+            logger.debug("boundary high blooms are predominantly in year one")
+            high_boundary_blooms_in_year = True
+            high_boundary_duration_threshold = high_year_one_mean + high_year_two_mean
+
+    test_for_low_boundary_blooms = False
+    low_boundary_blooms_in_year = False
+    if low_in_yr_one_full:
+        test_for_low_boundary_blooms = True
+        low_year_one_mean = mean(low_in_yr_one_full)
+        low_year_two_mean = mean(low_in_yr_two_full)
+        logger.debug(f"low blooms cover year boundary")
+        if low_year_one_mean > low_year_two_mean:
+            logger.debug("boundary low blooms are predominantly in year one")
+            #the blooms crossing the year are predominantly in the first year, rather than the second
+            low_boundary_blooms_in_year = True
+            low_boundary_duration_threshold = low_year_one_mean + low_year_two_mean
+    
+    """
+    Boundary bloom filtering end
+    """
+
     logger.debug(high_records)
     logger.debug(low_records)
     
@@ -434,8 +518,16 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #find blooms that start after the year - our reverse search, end before the end of the year, and end during the current year
         #this is where I have concerns that there are problems with the selection of blooms, if we're doing a year with reference month of June
         #then this currently selects june - june, rather than january - december, is this correct? The central month 
-        possible_high_blooms = [x for x in high_records if x[3] > year_start_index and x[3] < (year_start_index + date_seperation_per_year + forward_search) and not x[0] < (year_start_index - reverse_search)]
-        possible_low_blooms = [x for x in low_records if x[3] > year_start_index and x[3] < (year_start_index + date_seperation_per_year + forward_search) and not x[0] < (year_start_index - reverse_search)]
+        logger.debug("possible_high_blooms pre year selection")
+        logger.debug(high_records)
+        logger.debug("possible_low_blooms pre year selection")
+        logger.debug(low_records)
+
+        logger.debug(f"start date minimum threshold is {year_start_index - reverse_search}")
+
+
+        possible_high_blooms = [x for x in high_records if x[3] >= year_start_index - reverse_search and x[3] < (year_start_index + date_seperation_per_year + forward_search) and not x[0] < (year_start_index - reverse_search)]
+        possible_low_blooms = [x for x in low_records if x[3] >= year_start_index - reverse_search and x[3] < (year_start_index + date_seperation_per_year + forward_search) and not x[0] < (year_start_index - reverse_search)]
 
         logger.debug("possible_high_blooms pre filtering")
         logger.debug(possible_high_blooms)
@@ -443,19 +535,45 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         logger.debug(possible_low_blooms)
 
 
-        #if there is a high that straddles the years
-        if pre_low_start:
-            if pre_low_start < year_start_index:
-                if abs(pre_low_start - year_start_index) > abs(first_low - year_start_index):
-                    # if the high "belongs" to the previous year (ie the majority of it resides in the last year) then we should discount any highs that occur in there
-                    possible_high_blooms = [x for x in possible_high_blooms if x[3] > first_low]
+        if one_year_only_output:
+            #if there is a high that straddles the years
+            if pre_low_start:
+                if pre_low_start < year_start_index:
+                    if abs(pre_low_start - year_start_index) > abs(first_low - year_start_index):
+                        # if the high "belongs" to the previous year (ie the majority of it resides in the last year) then we should discount any highs that occur in there
+                        possible_high_blooms = [x for x in possible_high_blooms if x[3] > first_low]
 
-        #if there is a low that straddles the years
-        if pre_high_start:
-            if pre_high_start < year_start_index:
-                if abs(pre_high_start - year_start_index) > abs(first_high - year_start_index):
-                    # if the low "belongs" to the previous year (ie the majority of it resides in the last year) then we should discount any highs that occur in there
-                    possible_low_blooms = [x for x in possible_low_blooms if x[3] > first_high]
+            #if there is a low that straddles the years
+            if pre_high_start:
+                if pre_high_start < year_start_index:
+                    if abs(pre_high_start - year_start_index) > abs(first_high - year_start_index):
+                        # if the low "belongs" to the previous year (ie the majority of it resides in the last year) then we should discount any highs that occur in there
+                        possible_low_blooms = [x for x in possible_low_blooms if x[3] > first_high]
+        else:
+            if test_for_low_boundary_blooms or test_for_high_boundary_blooms:
+                if test_for_low_boundary_blooms:
+                    if low_boundary_blooms_in_year:
+                        #include yr boundary blooms at end of year
+                        logger.debug("as low boundary is predominantly in year one, we will filter out anything outside of this year")
+                        possible_low_blooms = [x for x in possible_low_blooms if x[0] <= year_start_index + date_seperation_per_year and x[0] >= year_start_index]
+                    else:
+                        #include yr boundary blooms at beginning of year
+                        possible_low_blooms = [x for x in possible_low_blooms if x[1] <= year_start_index + date_seperation_per_year and x[1] >= year_start_index]
+            
+                if test_for_high_boundary_blooms:
+                    if high_boundary_blooms_in_year:
+                        #include yr boundary blooms at end of year
+                        logger.debug("as high boundary is predominantly in year one, we will filter out anything outside of this year")
+                        possible_high_blooms = [x for x in possible_high_blooms if x[0] <= year_start_index + date_seperation_per_year and x[0] >= year_start_index]
+                    else:
+                        #include yr boundary blooms at beginning of year
+                        possible_high_blooms = [x for x in possible_high_blooms if x[1] <= year_start_index + date_seperation_per_year and x[1] >= year_start_index]
+
+
+
+        
+
+
 
 
         #test the start date, and the end date, if the start and end date are roughly equal
@@ -474,6 +592,9 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             append_high = True
             for lindex, low_bloom in enumerate(possible_low_blooms):
                 if any([low_bloom[x] == high_bloom[x] for x in [0, 1]]):
+                    logger.debug("found bloom in high and low that match")
+                    logger.debug(low_bloom)
+                    logger.debug(high_bloom)
                     #whichever max is higher we should select
                     if low_bloom[4] > high_bloom[4]:
                         high_removals.append(hindex)
@@ -533,10 +654,18 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         #Alternative date sorting, based on start date
         high_start = high[0] if high[0] else -1000
         low_start = low[0] if low[0] else -1000
-        if low_start > high_start:
+        if low_start == -1000 and high_start == -1000:
+            blooms_by_date.append([high, low])
+        elif low_start == -1000 and high_start > -1000:
+            blooms_by_date.append([high, low])
+        elif high_start == -1000 and low_start > -1000:
+            blooms_by_date.append([low, high])
+        elif low_start > high_start:
+            blooms_by_date.append([high, low])
+        elif high_start > low_start:
             blooms_by_date.append([low, high])
         else:
-            blooms_by_date.append([high, low])
+            blooms_by_date.append([low, high])
         
 
         """
@@ -1176,7 +1305,7 @@ def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, c
                                            verbose=False, 
                                            start_date=start_date, 
                                            reference_date=reference_index,
-                                           end_date=end_date)
+                                           processing_end_date=end_date)
 
         """
         if ix in completion_points and iy == 0:
@@ -1253,6 +1382,10 @@ def get_chl_ngd(start_date, date_seperation_per_year, chl_array):
 
 def find_nearest(array, value):
     array = numpy.asarray(array)
+    if value > array.max():
+        logger.error(f"found value greater than dimension max val: {value} arr max:{array.max()}")
+    elif value < array.min():
+        logger.error(f"found value less than dimension min val: {value} arr max:{array.min()}")
     idx = (numpy.abs(array - value)).argmin()
     return idx
 
@@ -1534,7 +1667,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_means_threshold", default=MAX_MEANS_THRESHOLD_DEFAULT, help="change amount subtracted from max means for anomaly thresholding, default is 20\% of max means", required=False)
     #probably needs a better description!
     #give options for both since we might end up in a situation where sst is 3 years and chl is one year (or vice versa)
-    parser.add_argument("--extend_chl_data", default=False, action="store_true", help="extends chlorophyll by copying the (central) chl array to the year previous and year next")
+    parser.add_argument("--extend_chl_data", default=False, action="store_true", help="extends chlorophyll by copying the (central) chl array to the year previous and year next. By enabling this we assume that you are using a single year climatology file, this changes the filtering of blooms slightly to use the termination of an SST period as the year end rather than the mean duration of blooms that cross a year boundary.")
     parser.add_argument("--extend_sst_data", default=False, action="store_true", help="extends sea surfaace temperature by copying the (central) chl array to the year previous and year next")
     parser.add_argument("--start_year", default=0, help="What year to use as the start point for metadata output, if not specified will use 0, affects no processing.")
     parser.add_argument("--debug_pixel",  nargs='+', default=None, type=float, help="pixle in x, y (lat, lon), these entries are 0 indexed.")
@@ -1555,6 +1688,10 @@ if __name__ == "__main__":
     parser.add_argument("--chunk_size", type=int, default=DEFAULT_CHUNKS, help="size of chunks along one side to process (e.g. value of 200 becomes 200x200 chunk")
     parser.add_argument("--minimum_bloom_seperation_duration", type=int, default=10, help="the minimum days between a two initiation dates, this is converted to timesteps by: timesteps_per_year * (days / 365). Default 15.")
     args = parser.parse_args()
+    if args.extend_chl_data:
+        one_year_only_output = True
+    else:
+        one_year_only_output = False
     extend_chl_array = args.extend_chl_data
     output_folder = args.output_folder if args.output_folder else os.path.dirname(args.chl_location[0])
     zlib_compression = not args.no_compress
@@ -1590,7 +1727,7 @@ if __name__ == "__main__":
     duration_minimum_value = int(round(date_seperation_per_year * (args.minimum_bloom_duration / 365)))
     start_minimum_seperation_value = int(round(date_seperation_per_year * (args.minimum_bloom_seperation_duration / 365)))
     if not args.reverse_search:
-        reverse_search = int(round(int(args.date_seperation_per_year) * 0.28))
+        reverse_search = int(round(int(args.date_seperation_per_year) * 0.38))
     logger.info("Reverse search:{}".format(reverse_search))
 
     start_date = None
@@ -1640,8 +1777,11 @@ if __name__ == "__main__":
         logger.info("getting chunks")
 
         if args.debug_pixel:
+            #debug_lat = find_nearest(chl_lats, args.debug_pixel[0]) if find_nearest(chl_lats, args.debug_pixel[0]) > 0 else 1
+            #debug_lon = find_nearest(chl_lons, args.debug_pixel[1]) if find_nearest(chl_lons, args.debug_pixel[1]) > 0 else 1
             debug_lat = find_nearest(chl_lats, args.debug_pixel[0])
             debug_lon = find_nearest(chl_lons, args.debug_pixel[1])
+            logger.info(f"debug lat {chl_lats[debug_lat]}, debug lon {chl_lons[debug_lon]}")
             debug_pixel = [debug_lat, debug_lon]
         else:
             debug_pixel = [int(chl_lats.shape[0] * 0.45), int(chl_lons.shape[0] * 0.45)]
@@ -1653,6 +1793,7 @@ if __name__ == "__main__":
                          for y in zip(list(range(0, chl_lats.shape[0], args.chunk_size)), list(range(args.chunk_size, chl_lats.shape[0], args.chunk_size)) + [chl_lats.shape[0]])]
 
 
+        logger.info(debug_pixel)
         debug_pixel_main = [[debug_pixel_main[0] - chunk[0][0], debug_pixel_main[1] - chunk[1][0], chunk_idx] for chunk_idx, chunk in enumerate(chunks) if chunk[0][0] < debug_pixel_main[0] and chunk[0][1] > debug_pixel_main[0] and chunk[1][0] < debug_pixel_main[1] and chunk[1][1] > debug_pixel_main[1]][0]
         logger.info(debug_pixel_main)
         logger.info("using debug pixel: {} which equates to: {} N {} E (zero indexed so you may need to add 1 to get reference in other software)".format(debug_pixel, chl_lats[debug_pixel_main[0]], chl_lons[debug_pixel_main[1]]))
@@ -1791,9 +1932,11 @@ if __name__ == "__main__":
                 if not args.no_delete:
                     os.remove(maxval_chunk_file[0])
                     os.remove(date_chunk_file[0])
-
-        maxval_ds['TIME'][:] = range(1, time_shape)
-        date_ds['TIME'][:] = range(1, time_shape)
+        try:
+            maxval_ds['TIME'][:] = range(1, time_shape)
+            date_ds['TIME'][:] = range(1, time_shape)
+        except:
+            logger.error(f"time shape isnt definied...")
         intermediate_ds.close()
         maxval_ds.close()
         date_ds.close()
@@ -1836,7 +1979,10 @@ if __name__ == "__main__":
                 intermediate_chunk.close()
                 os.remove(intermediate_chunk_file[0])
 
-        intermediate_ds["TIME"][:] = range(1, time_inter_shape)
+        try:
+            intermediate_ds["TIME"][:] = range(1, time_inter_shape)
+        except:
+            continue
         intermediate_ds.close()
         
         logger.info("complete!")

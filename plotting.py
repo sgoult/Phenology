@@ -27,17 +27,31 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
     print("after conversion indexes were:")
     print(lat_idx, lon_idx)
     print(start, stop, lat_idx, lon_idx)
-    ser =  t.variables["filled_chl"][start:stop,:,lat_idx,lon_idx]
-    x = range(start, stop)
-    fig1 = plt.figure(figsize=(xsize,ysize), dpi=300)
-    plt.title("{}, {}".format(lat, lon))
-    plt.plot(x, ser, color='blue', label="filled chl")
-    ser =  t.variables["chl_boxcar"][start:stop,:,lat_idx,lon_idx]
-    x = range(start, stop)
-    plt.plot(x, ser, color='green', label="chl boxcar")
-    ser =  t.variables["sst_der"][start:stop,:,lat_idx,lon_idx]
-    x = range(start, stop)
-    plt.plot(x, ser, color='red', label="sst derivative")
+    ser =  t.variables["filled_chl"][start:stop + 15,:,lat_idx,lon_idx]
+    extension = 15
+    plt.yticks(numpy.arange(-1.5, 1.5, 0.1))
+    try:
+        x = range(start, stop  + extension)
+        fig1 = plt.figure(figsize=(xsize,ysize), dpi=300)
+        plt.title("{}, {}".format(lat, lon))
+        plt.plot(x, ser, color='blue', label="filled chl")
+        ser =  t.variables["chl_boxcar"][start:stop + 15,:,lat_idx,lon_idx]
+        x = range(start, stop + 15)
+        plt.plot(x, ser, color='green', label="chl boxcar")
+        ser =  t.variables["sst_der"][start:stop + 15,:,lat_idx,lon_idx]
+        x = range(start, stop + 15)
+        plt.plot(x, ser, color='red', label="sst derivative")
+    except:
+        extension = 0
+        x = range(start, stop  + extension)
+        fig1 = plt.figure(figsize=(xsize,ysize), dpi=300)
+        plt.title("{}, {}".format(lat, lon))
+        plt.plot(x, ser, color='blue', label="filled chl")
+        ser =  t.variables["chl_boxcar"][start:stop + 15,:,lat_idx,lon_idx]
+        x = range(start, stop + extension)
+        plt.plot(x, ser, color='green', label="chl boxcar")
+        ser =  t.variables["sst_der"][start:stop + 15,:,lat_idx,lon_idx]
+        x = range(start, stop + extension)
     #add vertical lines for start (red) and end (green) of each year
     last_start = None
     last_end = None
@@ -46,18 +60,17 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
     print(list(range(start_index, stop, date_seperation_per_year)))
     year_indx_offset = start_index // date_seperation_per_year
     print(year_indx_offset)
-    for year_indx, year in enumerate(range(start_index, stop, date_seperation_per_year)):
-        print(year_indx)
+    for year_indx, year in enumerate(range(start_index, stop + date_seperation_per_year, date_seperation_per_year)):
         if not (year >= start and year < stop):
             continue
-        year_indx += year_indx_offset - 1
+        print(f"using year index {year_indx}")
         last_start = plt.axvline(x=year, color='red')
         last_end = plt.axvline(x=year +  date_seperation_per_year -1, color='green')
         date_start =  timings.variables["date_start1"][year_indx,:,lat_idx,lon_idx]
         date_max =  timings.variables["date_max1"][year_indx,:,lat_idx,lon_idx]
         date_end =  timings.variables["date_end1"][year_indx,:,lat_idx,lon_idx]
         duration =  timings.variables["duration1"][year_indx,:,lat_idx,lon_idx]
-        if not numpy.ma.is_masked(date_start) and not (date_start+year >stop and date_stop < start):
+        if not numpy.ma.is_masked(date_start) and not (start+year >stop and stop < start):
             last_date_start = plt.axvline(x=year + date_start, color='orange')
             plt.axvline(x=year + date_max + 1, color='orange')
             print("primary")
@@ -67,12 +80,16 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
         date_max =  timings.variables["date_max2"][year_indx,:,lat_idx,lon_idx]
         date_end =  timings.variables["date_end2"][year_indx,:,lat_idx,lon_idx]
         duration =  timings.variables["duration2"][year_indx,:,lat_idx,lon_idx]
-        if not numpy.ma.is_masked(date_start)  and not (date_start+year >stop and date_stop < start):
+        if not numpy.ma.is_masked(date_start)  and not (date_start+year >stop and stop < start):
             last_date_start_two = plt.axvline(x=year + date_start, color='purple')
             plt.axvline(x=year + date_max + 1, color='purple')
             print("secondary")
             print(date_start, date_max, date_end)
             plt.axvline(x=year + date_end, color='purple')
+
+    median_chl = timings.variables["median_chlorophyll"][:,lat_idx,lon_idx]
+
+    plt.axhline(y=median_chl * 1.2, color='black', label="threshold")
 
     if last_start:
         last_start.set_label('year start')
@@ -83,17 +100,20 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
     if last_date_start_two:
         last_date_start_two.set_label('date_start2 metrics')
     plt.legend()
+    plt.yticks(numpy.arange(-1.5, 1.5, 0.1))
+    plt.ylim([-1.5, 1.5])
     pdf.savefig(fig1)
 
 def main(args):
     d = nc.Dataset(args.phen_file)
     t = nc.Dataset(args.phen_file.replace("_by_date","_intermediate_products").replace("_by_maxval","_intermediate_products"))
     steps_per_year = d.getncattr("steps_per_year")
-    time_full = t.dimensions['TIME'].size
+    time_full = 1012
     if "--extend_chl_data" in d.getncattr("generation command"):
         time_start = steps_per_year
     else:
         time_start = 0
+    time_start = 0
     points = [p.split(",") for p in args.points]
     if not args.output_folder:
         output_file = args.phen_file.replace("nc", "pdf")
@@ -122,7 +142,9 @@ def main(args):
             print(point)
             gen_plots(args.phen_file, float(point[0]), float(point[1]), time_start, time_full, pdf, start_index=time_start, date_seperation_per_year=steps_per_year)
             if not args.skip_individual_years:
-                for year_indx, year in enumerate(range(time_start, time_full, steps_per_year)):
+                for year_indx, year in enumerate(range(time_start, time_full + steps_per_year, steps_per_year)):
+                    print(f"time full {time_full}")
+                    print(f"on year {year_indx}")
                     gen_plots(args.phen_file, float(point[0]), float(point[1]), year, year+steps_per_year, pdf, xsize=6, ysize=6,start_index=time_start, date_seperation_per_year=steps_per_year)
 
 

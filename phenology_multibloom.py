@@ -1693,7 +1693,6 @@ if __name__ == "__main__":
     parser.add_argument("--threads", type=int, default=0, help="use this many threads (must be integer)")
     parser.add_argument("--no_compress", action='store_true', default=False, help="Don't compress the data - for large files this can be the difference of a days processing :(")
     parser.add_argument("--no_logfile", action='store_true', default=False, help="Don't create a logfile")
-    parser.add_argument("--stitch_only", action='store_true', default=False, help="Don't create a logfile")
     parser.add_argument("--no_delete", action='store_true', default=False, help="Don't delete chunks")
     parser.add_argument("--no_chl_fill", action='store_true', default=False, help="Don't fill the chlorophyll variable")
     parser.add_argument("--debug_chunk_only", action='store_true', default=False, help="Only process our debug pixel and its relative chunk")

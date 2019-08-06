@@ -26,20 +26,22 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
     lon_idx = find_nearest(lons, lon)
     print("after conversion indexes were:")
     print(lat_idx, lon_idx)
+    print("which are:")
+    print(lats[lat_idx], lons[lon_idx])
     print(start, stop, lat_idx, lon_idx)
-    ser =  t.variables["filled_chl"][start:stop + 15,:,lat_idx,lon_idx]
-    extension = 15
+    extension = 25
+    ser =  t.variables["filled_chl"][start:stop+ extension,:,lat_idx,lon_idx]
     plt.yticks(numpy.arange(-1.5, 1.5, 0.1))
     try:
         x = range(start, stop  + extension)
         fig1 = plt.figure(figsize=(xsize,ysize), dpi=300)
         plt.title("{}, {}".format(lat, lon))
         plt.plot(x, ser, color='blue', label="filled chl")
-        ser =  t.variables["chl_boxcar"][start:stop + 15,:,lat_idx,lon_idx]
-        x = range(start, stop + 15)
+        ser =  t.variables["chl_boxcar"][start:stop+ extension,:,lat_idx,lon_idx]
+        x = range(start, stop+ extension)
         plt.plot(x, ser, color='green', label="chl boxcar")
-        ser =  t.variables["sst_der"][start:stop + 15,:,lat_idx,lon_idx]
-        x = range(start, stop + 15)
+        ser =  t.variables["sst_der"][start:stop+ extension,:,lat_idx,lon_idx]
+        x = range(start, stop+ extension)
         plt.plot(x, ser, color='red', label="sst derivative")
     except:
         extension = 0
@@ -47,10 +49,10 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
         fig1 = plt.figure(figsize=(xsize,ysize), dpi=300)
         plt.title("{}, {}".format(lat, lon))
         plt.plot(x, ser, color='blue', label="filled chl")
-        ser =  t.variables["chl_boxcar"][start:stop + 15,:,lat_idx,lon_idx]
+        ser =  t.variables["chl_boxcar"][start:stop+ extension,:,lat_idx,lon_idx]
         x = range(start, stop + extension)
         plt.plot(x, ser, color='green', label="chl boxcar")
-        ser =  t.variables["sst_der"][start:stop + 15,:,lat_idx,lon_idx]
+        ser =  t.variables["sst_der"][start:stop+ extension,:,lat_idx,lon_idx]
         x = range(start, stop + extension)
     #add vertical lines for start (red) and end (green) of each year
     last_start = None
@@ -60,6 +62,7 @@ def gen_plots(phen_file, lat, lon, start, stop, pdf, xsize=35, ysize=3, start_in
     print(list(range(start_index, stop, date_seperation_per_year)))
     year_indx_offset = start_index // date_seperation_per_year
     print(year_indx_offset)
+    print(stop)
     for year_indx, year in enumerate(range(start_index, stop + date_seperation_per_year, date_seperation_per_year)):
         if not (year >= start and year < stop):
             continue
@@ -108,13 +111,13 @@ def main(args):
     d = nc.Dataset(args.phen_file)
     t = nc.Dataset(args.phen_file.replace("_by_date","_intermediate_products").replace("_by_maxval","_intermediate_products"))
     steps_per_year = d.getncattr("steps_per_year")
-    time_full = 1012
+    time_full = t.variables["TIME"].shape[0]
     if "--extend_chl_data" in d.getncattr("generation command"):
         time_start = steps_per_year
     else:
         time_start = 0
-    time_start = 0
-    points = [p.split(",") for p in args.points]
+
+    points = [p.replace("n", "-").split(",") for p in args.points]
     if not args.output_folder:
         output_file = args.phen_file.replace("nc", "pdf")
     else:
@@ -142,7 +145,7 @@ def main(args):
             print(point)
             gen_plots(args.phen_file, float(point[0]), float(point[1]), time_start, time_full, pdf, start_index=time_start, date_seperation_per_year=steps_per_year)
             if not args.skip_individual_years:
-                for year_indx, year in enumerate(range(time_start, time_full + steps_per_year, steps_per_year)):
+                for year_indx, year in enumerate(range(time_start, time_full, steps_per_year)):
                     print(f"time full {time_full}")
                     print(f"on year {year_indx}")
                     gen_plots(args.phen_file, float(point[0]), float(point[1]), year, year+steps_per_year, pdf, xsize=6, ysize=6,start_index=time_start, date_seperation_per_year=steps_per_year)

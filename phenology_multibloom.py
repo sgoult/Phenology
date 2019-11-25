@@ -534,7 +534,6 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         logger.debug("possible_low_blooms pre filtering")
         logger.debug(possible_low_blooms)
 
-
         if one_year_only_output:
             #if there is a high that straddles the years
             if pre_low_start:
@@ -1486,7 +1485,7 @@ def chunk_by_chunk(chunk_idx, chunk):
         logger.info("sst file provided, reading array")
         logger.info("only one file found, assuming full stack of observations")
         sst_ds = nc.Dataset(args.sst_location)
-        sst_variable = [x for x in sst_ds.variables if args.sst_var in x.lower()][0]
+        sst_variable = [x for x in sst_ds.variables if args.sst_var.strip().lower() in x.strip().lower()][0]
         sst_lon_var, sst_lat_var, sst_time_var = ds_to_dim_vars(sst_ds)
         sst_lons = sst_ds.variables[sst_lon_var][:]
         sst_lats = sst_ds.variables[sst_lat_var][:]

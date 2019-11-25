@@ -43,6 +43,9 @@ logging.basicConfig()
 logger = logging.getLogger("phenology_logger")
 logger.setLevel(logging.DEBUG)
 
+class BlockingException(Exception):
+    pass
+
 def mean(list_object):
     return sum(list_object) / len(list_object)
 
@@ -1376,7 +1379,7 @@ def chunk_by_chunk_handler(chunk_idx, chunk):
         log_lock.release()
         handler.setLevel(default_logging)
         logger.error(e)
-    raise e
+        raise e
 
 def get_chl_ngd(start_date, date_seperation_per_year, chl_array):
     ngd_arr = []
@@ -1454,38 +1457,15 @@ def chunk_by_chunk(chunk_idx, chunk):
         chl_array, chunk_start_date = extend_array(chl_array, date_seperation_per_year, chunk_start_date)
         logger.info("start date after extension: {}".format(chunk_start_date))
 
-    chl_shape, chl_dtype, chl_median, chl_std_dev, chl_max_means, perc_val_change, filled_chl = prepare_chl_variables(chl_array, 
-                                                                          chunk_idx, 
-                                                                          date_seperation_per_year, 
-                                                                          chl_lats, 
-                                                                          chl_lons, 
-                                                                          modelled_threshold=args.modelled_threshold, 
-                                                                          median_threshold=med_thresh, 
-                                                                          median_filename=chl_filename.replace(".nc", 
-                                                                                                               "_median_{}_chunk{}.nc".format(time_of_run,
-                                                                                                                                              chunk_idx)
-                                                                                                              ),
-                                                                          chunk_idx=chunk_idx,
-                                                                          std_dev_anomaly=do_std_dev,
-                                                                          std_dev_threshold=std_dev_threshold,
-                                                                          relative_max_anomaly=do_rel_max,
-                                                                          max_means_threshold=max_means_threshold,
-                                                                          max_means_anomaly=do_max_means,
-                                                                          relative_median_anomaly=do_rel_med_anomaly,
-                                                                          do_fill_chl=fill_chl,
-                                                                          output_name=output,
-                                                                          date_seperation_per_year=date_seperation_per_year)
-    logger.info("chl_shape: {}".format(chl_shape))
-    logger.info("chl_dtype: {}".format(USE_DTYPE))
-
-    chl_ngd = get_chl_ngd(chunk_start_date, date_seperation_per_year, filled_chl)
-
     if args.sst_location:
         sst_lock.acquire()
         logger.info("sst file provided, reading array")
         logger.info("only one file found, assuming full stack of observations")
         sst_ds = nc.Dataset(args.sst_location)
-        sst_variable = [x for x in sst_ds.variables if args.sst_var.strip().lower() in x.strip().lower()][0]
+        try:
+            sst_variable = [x for x in sst_ds.variables if args.sst_var.strip().lower() in x.strip().lower()][0]
+        except IndexError:
+            raise BlockingException("Could not find the sst var requested '{}'\nthis is a blocking error, check the requested variable name matches the variable in the netcdf.".format(args.sst_var))
         sst_lon_var, sst_lat_var, sst_time_var = ds_to_dim_vars(sst_ds)
         sst_lons = sst_ds.variables[sst_lon_var][:]
         sst_lats = sst_ds.variables[sst_lat_var][:]
@@ -1518,6 +1498,33 @@ def chunk_by_chunk(chunk_idx, chunk):
             logger.info("reshaping sst to {}".format((sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])))
             sst_array.shape = (sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])
 
+    chl_shape, chl_dtype, chl_median, chl_std_dev, chl_max_means, perc_val_change, filled_chl = prepare_chl_variables(chl_array, 
+                                                                          chunk_idx, 
+                                                                          date_seperation_per_year, 
+                                                                          chl_lats, 
+                                                                          chl_lons, 
+                                                                          modelled_threshold=args.modelled_threshold, 
+                                                                          median_threshold=med_thresh, 
+                                                                          median_filename=chl_filename.replace(".nc", 
+                                                                                                               "_median_{}_chunk{}.nc".format(time_of_run,
+                                                                                                                                              chunk_idx)
+                                                                                                              ),
+                                                                          chunk_idx=chunk_idx,
+                                                                          std_dev_anomaly=do_std_dev,
+                                                                          std_dev_threshold=std_dev_threshold,
+                                                                          relative_max_anomaly=do_rel_max,
+                                                                          max_means_threshold=max_means_threshold,
+                                                                          max_means_anomaly=do_max_means,
+                                                                          relative_median_anomaly=do_rel_med_anomaly,
+                                                                          do_fill_chl=fill_chl,
+                                                                          output_name=output,
+                                                                          date_seperation_per_year=date_seperation_per_year)
+    logger.info("chl_shape: {}".format(chl_shape))
+    logger.info("chl_dtype: {}".format(USE_DTYPE))
+
+    chl_ngd = get_chl_ngd(chunk_start_date, date_seperation_per_year, filled_chl)
+
+    if args.sst_location:
         sst_shape, sst_dtype = prepare_sst_variables(sst_array, chunk_idx, skip=args.skip_sst_prep,chunk_idx=chunk_idx, output_name=output)
         logger.info("sst_shape: {}".format(sst_shape))
         logger.info("sst_dtype: {}".format(USE_DTYPE))
@@ -1650,6 +1657,7 @@ def get_ds_time_data(ds, time_var, begin_date=False, var="chl"):
         sys.exit()
 
     return REF_MONTH, START_YEAR, missing_dates_at_start, missing_dates_at_end, ds[time_var].shape[0], start_datetime
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -1842,6 +1850,7 @@ if __name__ == "__main__":
             log_info_lock_maj = multiprocessing.Lock()
             debug_chunk = debug_pixel_main[2]
             pool = multiprocessing.Pool(threads, initializer=multi_proc_init, initargs=(chl_lock_maj, sst_lock_maj, log_info_lock_maj))
+
             #set this to be an early one
             res = pool.starmap_async(chunk_by_chunk_handler, [(chunk_idx, chunk) for chunk_idx, chunk in enumerate(chunks)], chunksize=1)
             with tqdm.tqdm(total=len(chunks)) as pbar:
@@ -1849,6 +1858,12 @@ if __name__ == "__main__":
                 last_known = res._number_left
                 while running:
                     time.sleep(1)
+                    #if an exception has been raised
+                    if not res._success:
+                        pool.terminate()
+                        running = False
+                        logger.error("Program terminated due to error, read above for reason (and hopefully a fix)")
+                        sys.exit()
                     if res._number_left != last_known:
                         pbar.update(last_known - res._number_left)
                         last_known = res._number_left

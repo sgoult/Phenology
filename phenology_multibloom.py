@@ -18,6 +18,7 @@ import logging
 import time
 import traceback
 import astropy.convolution
+import csv
 from fast_polarity.polarity import polarity_edge_finder_optimised as polaritiser
 from scipy.signal import argrelextrema, argrelmin
 
@@ -732,35 +733,43 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
     return blooms, ngds, blooms_by_date, ngds_date, total_blooms
 
-def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_name=None):
+def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_name=None, csv=False):
     """
     Creates smoothed sst, currently has a large portion commented out as source file
      is already the centered derivative diff data.
     """
     global debug_pixel_main
-    ds = nc.Dataset(output_name.replace(".nc", "_intermediate_products.nc".format(chunk_idx)), 'r+', format='NETCDF4_CLASSIC')
+    if not csv:
+        ds = nc.Dataset(output_name.replace(".nc", "_intermediate_products.nc".format(chunk_idx)), 'r+', format='NETCDF4_CLASSIC')
     logger.info("sst_array shape before prep:{}".format(sst_array.shape))
     #smoothed sst
     if not skip:
         logger.info("smoothing sst")
         #logger.info(sst_array[:20,:,debug_pixel_main[0],debug_pixel_main[1]])
         if debug_pixel_main[2] == chunk_idx:
-            logger.info(sst_array[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
+            if LON_IDX < LAT_IDX :
+                logger.info(sst_array[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
+            else:
+                logger.info(sst_array[:5,:,debug_pixel_main[1],debug_pixel_main[0]])
         sst_boxcar = numpy.apply_along_axis(lambda m: numpy.ma.convolve(m, numpy.ones(8)/8, mode='valid'), axis=0, arr=sst_array)
         logger.info("shape after sst sbx")
         logger.info(sst_boxcar.shape)
         fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])), mask=numpy.ones((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])))
+
         #sst_boxcar_map = numpy.memmap(os.path.join(numpy_storage, str(chunk), "sst_sbx"), mode="w+", shape=sst_boxcar.shape, dtype=USE_DTYPE)
         logger.debug("masking sst boxcar with sst_array mask")
+        if not csv:
+            ds.createVariable('sst_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
+            ds.variables['sst_boxcar'].setncattr("units", "degrees celsius")
+            ds.variables['sst_boxcar'][:] = sst_boxcar[:]
 
-        ds.createVariable('sst_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
-        ds.variables['sst_boxcar'].setncattr("units", "degrees celsius")
-        ds.variables['sst_boxcar'][:] = sst_boxcar[:]
-
-        ds.close()
+            ds.close()
         #get sst derivative
         logger.info("doing sst_derivative")
-        sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar[:,:,:,:], method='same')
+        if not csv:
+            sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar[:,:,:,:], method='same')
+        else:
+            sst_der = numpy.apply_along_axis(centered_diff_derivative, 0, sst_boxcar[:], method='same')
         logger.info("shape after sst der")
         logger.info(sst_der.shape)
     else:
@@ -775,12 +784,40 @@ def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_n
     logger.info("this means there are {} new timesteps that must be created at the beginning and end of the sst derivitive array".format(abs(additional_steps)))
 
     
-    start_fill_arrays = [fill_arr for i in range(0, math.floor(abs(additional_steps)))]
+    #start_fill_arrays = [fill_arr for i in range(0, math.floor(abs(additional_steps)))]
+
+
+
+    #end_fill_arrays = [fill_arr for i in range(0, math.ceil(abs(additional_steps)))]
+
+    if not missing_sst_dates_at_start - math.floor(additional_steps) < 0:
+        logger.info("padding {} time steps from january {} in sst_der".format(missing_sst_dates_at_start + -math.floor(additional_steps), START_YEAR))
+        start_fill_arrays = [fill_arr for i in range(math.floor(additional_steps), missing_sst_dates_at_start)]
+        print(len(start_fill_arrays))
+    else:
+        start_fill_arrays = missing_sst_dates_at_start - math.floor(additional_steps)
 
     if not additional_steps.is_integer():
         logger.warning("as the number of new timesteps is not a whole number will pad one additional step to the beginning of the sst derivitive array")
 
-    end_fill_arrays = [fill_arr for i in range(0, math.ceil(abs(additional_steps)))]
+    if not missing_sst_dates_at_end - math.ceil(additional_steps) < 0:
+        logger.info("padding {} time steps to december in sst der".format(missing_sst_dates_at_end - math.ceil(additional_steps), START_YEAR))
+        end_fill_arrays = [fill_arr for i in range(math.ceil(additional_steps), missing_sst_dates_at_end)]
+        print(len(end_fill_arrays))
+    else:
+        end_fill_arrays = missing_sst_dates_at_end - math.ceil(additional_steps)
+
+    if not isinstance(end_fill_arrays, list):
+        logger.info("removing {} values from sst end".format(end_fill_arrays))
+        sst_der = sst_der[0:sst_der.shape[0] - abs(end_fill_arrays)]
+        end_fill_arrays=[]
+        logger.info(sst_der.shape)
+
+    if not isinstance(start_fill_arrays, list):
+        logger.info("removing {} values from sst start".format(start_fill_arrays))
+        sst_der = sst_der[0+abs(start_fill_arrays):sst_der.shape[0]]
+        start_fill_arrays=[] 
+        logger.info(sst_der.shape)    
 
     logger.info((sst_der.shape[0], len(start_fill_arrays), len(end_fill_arrays)))
     if not (sst_der.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year == 0:
@@ -791,19 +828,34 @@ def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_n
     masks_arr = numpy.array([masked_world for x in range(0, sst_der.shape[0])])
     sst_der_masked = numpy.ma.masked_where(masks_arr == True, sst_der)
 
+
     sst_der = numpy.ma.concatenate(start_fill_arrays + [sst_der] + end_fill_arrays)
     sst_der = numpy.ma.filled(sst_der, fill_value=FILL_VAL)
-    ds = nc.Dataset(output_name.replace(".nc", "_intermediate_products.nc".format(chunk_idx)), 'r+', format='NETCDF4_CLASSIC')
-    ds.createVariable('sst_der', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
-    ds.variables['sst_der'].setncattr("units", "deg C")
-    ds.variables['sst_der'][:] = sst_der[:]
-    ds.close()
+
+    if csv:
+        logger.info("padding {} time steps from january {} in sst array".format(missing_sst_dates_at_start, START_YEAR))
+        start_fill_arrays = [fill_arr for i in range(0, missing_chl_dates_at_start)]
+        logger.info("padding {} time steps to december in sst array".format(missing_sst_dates_at_end, START_YEAR))
+        end_fill_arrays = [fill_arr for i in range(0, missing_chl_dates_at_end)]
+
+        filled_sst = numpy.ma.concatenate(start_fill_arrays + [sst_array] + end_fill_arrays)
+        filled_sst = numpy.ma.masked_where(filled_sst == FILL_VAL, filled_sst)
+
+    if not csv:
+        ds = nc.Dataset(output_name.replace(".nc", "_intermediate_products.nc".format(chunk_idx)), 'r+', format='NETCDF4_CLASSIC')
+        ds.createVariable('sst_der', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
+        ds.variables['sst_der'].setncattr("units", "deg C")
+        ds.variables['sst_der'][:] = sst_der[:]
+        ds.close()
 
 
     logger.info("sst prep complete")
-    return sst_der.shape, 'float64'
+    if not csv:
+        return sst_der.shape, 'float64'
+    else:
+        return sst_der.shape, 'float64', sst_der, filled_sst
 
-def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons, modelled_threshold=False, median_threshold=1.2, relative_max_anomaly=False, relative_median_anomaly=False, dynamic_max_means_threshold=0.25, max_means_threshold=0.2, median_filename="median_output.nc", do_fill_chl=True, std_dev_anomaly=False,  max_means_anomaly=False, std_dev_threshold=STD_DEV_THRESHOLD_DEFAULT, chunk_idx=None, output_name=None, date_seperation_per_year=0):
+def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons, modelled_threshold=False, median_threshold=1.2, relative_max_anomaly=False, relative_median_anomaly=False, dynamic_max_means_threshold=0.25, max_means_threshold=0.2, median_filename="median_output.nc", do_fill_chl=True, std_dev_anomaly=False,  max_means_anomaly=False, std_dev_threshold=STD_DEV_THRESHOLD_DEFAULT, chunk_idx=None, output_name=None, date_seperation_per_year=0, csv=False):
     """
     Creates the smoothed anomaly chlorophyll data, saves a file to the temporary directory that is read as a mem map later to conserve resources.
     """
@@ -811,29 +863,30 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
     global debug_pixel_main
     #! here i would prfer we output the media value (without adding 5% to it)
 
-    ds = nc.Dataset(output_name.replace(".nc", "_intermediate_products.nc".format(chunk_idx)),'w',format='NETCDF4_CLASSIC')
-    ds.createDimension('LONGITUDE', chl_lons.shape[0])
-    ds.createDimension('LATITUDE', chl_lats.shape[0])
-    ds.createDimension('DEPTH', 1)
-    ds.createDimension('TIME', None)
-    ds.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'], zlib=True)
-    ds.variables['LATITUDE'].setncattr("units", "degrees_north")
-    ds.variables['LATITUDE'][:] = chl_lats
-    ds.createVariable('LONGITUDE', 'float64', dimensions=['LONGITUDE'], zlib=True)
-    ds.variables['LONGITUDE'].setncattr("units", "degrees_east")
-    ds.variables['LONGITUDE'][:] = chl_lons
-    ds.createVariable('DEPTH', 'float32', dimensions=['DEPTH'], zlib=True)
-    ds.variables['DEPTH'].setncattr("units", "meters")
-    ds.variables['DEPTH'].setncattr("positive", "down")
-    ds.variables['DEPTH'][:] = [0.1]
-    ds.createVariable('TIME', 'float32', dimensions=['TIME'], zlib=True)
-    ds.variables['TIME'].setncattr("units", "years")
-    #switch back to LATITIUDE and LONGITUDE, establish why the flipping of the axis makes everything go screwey
+    if not csv:
+        ds = nc.Dataset(output_name.replace(".nc", "_intermediate_products.nc".format(chunk_idx)),'w',format='NETCDF4_CLASSIC')
+        ds.createDimension('LONGITUDE', chl_lons.shape[0])
+        ds.createDimension('LATITUDE', chl_lats.shape[0])
+        ds.createDimension('DEPTH', 1)
+        ds.createDimension('TIME', None)
+        ds.createVariable('LATITUDE', 'float64', dimensions=['LATITUDE'], zlib=True)
+        ds.variables['LATITUDE'].setncattr("units", "degrees_north")
+        ds.variables['LATITUDE'][:] = chl_lats
+        ds.createVariable('LONGITUDE', 'float64', dimensions=['LONGITUDE'], zlib=True)
+        ds.variables['LONGITUDE'].setncattr("units", "degrees_east")
+        ds.variables['LONGITUDE'][:] = chl_lons
+        ds.createVariable('DEPTH', 'float32', dimensions=['DEPTH'], zlib=True)
+        ds.variables['DEPTH'].setncattr("units", "meters")
+        ds.variables['DEPTH'].setncattr("positive", "down")
+        ds.variables['DEPTH'][:] = [0.1]
+        ds.createVariable('TIME', 'float32', dimensions=['TIME'], zlib=True)
+        ds.variables['TIME'].setncattr("units", "years")
+        #switch back to LATITIUDE and LONGITUDE, establish why the flipping of the axis makes everything go screwey
 
     chl_array_fill_val = chl_array.fill_value
     #TODO insert the solar zenith angle establishment, only if handed a modelled input (so add flag for --modelled-input)
     #Here we make a very big assumption that index 0 is january of the year being considered in the chlorophyll array.
-    if modelled_threshold:
+    if modelled_threshold and not csv:
         days_per_ob = round(365 / date_seperation)
         half_entry = days_per_ob / 2
         ob_dates = [(d * days_per_ob) - half_entry for d in range(1,date_seperation+1)]
@@ -855,7 +908,6 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
         
         temp_chl_array = chl_array
 
-
         ds.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
         ds.variables['zen'].setncattr("units", "degrees")
         for year in range(0,  chl_array.shape[0], date_seperation):
@@ -872,7 +924,7 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
 
 
     #create the threshold var, this should be done on the original chlorophyll data, not the filled variable
-    if modelled_threshold:
+    if modelled_threshold and not csv:
         logger.info("chl_median")
         temp_chl_array = numpy.ma.masked_where(temp_chl_array == chl_array_fill_val, temp_chl_array)
         chl_median = numpy.ma.median(temp_chl_array,axis=0)
@@ -884,18 +936,18 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
         logger.info("median value: {}".format(chl_median))
         logger.info("median threshold: {}".format(median_threshold))
     
-    if modelled_threshold:
+    if modelled_threshold and not csv:
         std_dev = numpy.std(temp_chl_array, axis=0)
     else:
         std_dev = numpy.std(chl_array, axis=0)
     
-    if modelled_threshold:
+    if modelled_threshold and not csv:
         max_means, min_means, perc_val_change = numpy.apply_along_axis(find_maxes, 0,temp_chl_array)
     else:
         max_means, min_means, perc_val_change = numpy.apply_along_axis(find_maxes, 0,chl_array)
         
 
-    if modelled_threshold:
+    if modelled_threshold and not csv:
         chl_array = temp_chl_array
 
     #! after estimating the median, i apply a filling to the chl time-series, e.g., window of 8 time steps, but it would be good to be able to choose other width of the window, e.g., 5 time-steps or 3 time-steps...
@@ -903,8 +955,13 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
         #create a 9 x 9 x 9 filter such that central value will be average over time and space
         k = numpy.ones((5,5,5))
         logger.info("pre filling shape {}".format(chl_array.shape))
+        if not csv:
+            k = numpy.ones((5,5,5))
+        else:
+            k = numpy.ones((5,1,1))
         chl_reshape = chl_array.copy()
         chl_reshape.shape = (chl_array.shape[0],chl_array.shape[2],chl_array.shape[3])
+
         #extend values beyond array edge, interpolate over nan values as opposed to filling them with the default fill value (-999999 or something similar)
         filled_chl = astropy.convolution.convolve(chl_reshape, k, boundary='extend', nan_treatment='interpolate', mask=chl_reshape.mask)/k.sum()
         logger.info("post filling shape {}".format(filled_chl.shape))
@@ -921,7 +978,8 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
 
     logger.info("filled_chl has mask? {}".format(filled_chl.mask.any()))
 
-    ds.createVariable('filled_chl', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
+    if not csv:
+        ds.createVariable('filled_chl', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
 
     #! here it would be good to give the option to select the value of the median threshold, e.g., median plus 5%, 10%, 15%...
 
@@ -946,55 +1004,71 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
         anomaly = filled_chl - (chl_median*median_threshold)
 
     if debug_pixel_main[2] == chunk_idx:
-        logger.info(anomaly[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
+        if LON_IDX < LAT_IDX :
+            logger.info(anomaly[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
+        else:
+            logger.info(anomaly[:5,:,debug_pixel_main[1],debug_pixel_main[0]])
     #anomaly_map = numpy.memmap(os.path.join(numpy_storage, str(chunk), "chl_anomaly"), mode="w+", shape=anomaly.shape, dtype=USE_DTYPE)
     #anomaly_map[:] = anomaly[:]
 
     #anomaly = anomaly_map
-    ds.createVariable('anomaly', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
-    ds.variables['anomaly'].setncattr("units", "mg chl m^3")
-    ds.variables['anomaly'][:] = anomaly[:]
+    if not csv:
+        ds.createVariable('anomaly', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
+        ds.variables['anomaly'].setncattr("units", "mg chl m^3")
+        ds.variables['anomaly'][:] = anomaly[:]
 
-    anomaly_map = None
+        anomaly_map = None
     #need to ditch any empty entries here as they interefere with the cumsum
 
     #get cumsum of anomalies
     logger.info("chl cumsum")
     chl_cumsum = numpy.ma.cumsum(anomaly,axis=0)
     if debug_pixel_main[2] == chunk_idx:
-        logger.info(chl_cumsum[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
+        if LON_IDX < LAT_IDX :
+            logger.info(chl_cumsum[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
+        else:
+            logger.info(chl_cumsum[:5,:,debug_pixel_main[1],debug_pixel_main[0]])
     #chl_cumsum_map = numpy.memmap(os.path.join(numpy_storage, str(chunk), "chl_cumsum"), mode="w+", shape=chl_cumsum.shape, dtype=USE_DTYPE)
     #chl_cumsum_map[:] = chl_cumsum[:]
     #chl_cumsum = chl_cumsum_map
-    anomaly = None
-    chl_cumsum_map = None
+    if not csv:
+        anomaly = None
+        chl_cumsum_map = None
 
-    ds.createVariable('chl_cumsum', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
-    ds.variables['chl_cumsum'].setncattr("units", "mg chl m^3")
-    ds.variables['chl_cumsum'][:] = chl_cumsum[:]
+        ds.createVariable('chl_cumsum', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
+        ds.variables['chl_cumsum'].setncattr("units", "mg chl m^3")
+        ds.variables['chl_cumsum'][:] = chl_cumsum[:]
 
     #get centered derivative        
     logger.info("chl der")
     chl_der = numpy.apply_along_axis(centered_diff_derivative, 0, chl_cumsum)
     if debug_pixel_main[2] == chunk_idx:
-        logger.info(chl_der[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
+        if LON_IDX < LAT_IDX :
+            logger.info(chl_der[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
+        else:
+            logger.info(chl_der[:5,:,debug_pixel_main[1],debug_pixel_main[0]])
     #chl_der_map = numpy.memmap(os.path.join(numpy_storage, str(chunk), "chl_der"), mode="w+", shape=chl_der.shape, dtype=USE_DTYPE)
     #chl_der_map[:] = chl_der[:]
     #chl_der = chl_der_map
-    chl_cumsum = None
-    chl_der_map = None
+    if not csv:
+        chl_cumsum = None
+        chl_der_map = None
     
-    ds.createVariable('chl_der', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
-    ds.variables['chl_der'].setncattr("units", "mg chl m^3")
-    ds.variables['chl_der'][:] = chl_der[:]
+        ds.createVariable('chl_der', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
+        ds.variables['chl_der'].setncattr("units", "mg chl m^3")
+        ds.variables['chl_der'][:] = chl_der[:]
 
     #boxcar filter with width of 3 (sbx) should be something like this:
     logger.info("chl sbx")
     chl_boxcar = numpy.apply_along_axis(lambda m: numpy.convolve(m, numpy.ones(3)/3, mode='full'), axis=0, arr=chl_der)
     if debug_pixel_main[2] == chunk_idx:
-        logger.info(chl_boxcar[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
+        if LON_IDX < LAT_IDX :
+            logger.info(chl_boxcar[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
+        else:
+            logger.info(chl_boxcar[:5,:,debug_pixel_main[1],debug_pixel_main[0]])
+
     fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,chl_boxcar.shape[2],chl_boxcar.shape[3])),
-                                     mask=numpy.ones((1,1,chl_boxcar.shape[2],chl_boxcar.shape[3])))
+                                    mask=numpy.ones((1,1,chl_boxcar.shape[2],chl_boxcar.shape[3])))
     logger.info("chl shape after boxcar")
     logger.info(chl_boxcar.shape)
 
@@ -1033,7 +1107,6 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
         logger.info(chl_boxcar.shape)
 
     
-
     if not (chl_boxcar.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year == 0:
         logger.error("After padding, the chlorophyll boxcar end product did not divide equally!")
         logger.error((chl_boxcar.shape[0] + len(start_fill_arrays) + len(end_fill_arrays), date_seperation_per_year, (chl_boxcar.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year))
@@ -1045,12 +1118,13 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
     #now do the original chlorophyll array
     logger.info("padding {} time steps from january {} in chl array".format(missing_chl_dates_at_start, START_YEAR))
     start_fill_arrays = [fill_arr for i in range(0, missing_chl_dates_at_start)]
-    logger.info("padding {} time steps to december in chl boxcar".format(missing_chl_dates_at_end, START_YEAR))
+    logger.info("padding {} time steps to december in chl array".format(missing_chl_dates_at_end, START_YEAR))
     end_fill_arrays = [fill_arr for i in range(0, missing_chl_dates_at_end)]
 
     if not (filled_chl.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year == 0:
         logger.error("After padding, the chlorophyll boxcar end product did not divide equally!")
         raise Exception("After padding, the chlorophyll boxcar end product did not divide equally!")
+    
 
     logger.info("mask pre concatenation")
     logger.info(filled_chl.mask.any())
@@ -1059,22 +1133,24 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
 
     logger.info("mask post concatenation")
     logger.info(filled_chl.mask.any())
-
-    ds.variables['filled_chl'].setncattr("units", "mg chl m^3")
-    ds.variables['filled_chl'][:] = filled_chl[:]
+    if not csv:
+        ds.variables['filled_chl'].setncattr("units", "mg chl m^3")
+        ds.variables['filled_chl'][:] = filled_chl[:]
     logger.info("chl array shape after padding")
     logger.info(filled_chl.shape)
 
     logger.info("chl boxcar shape after padding")
     logger.info(chl_boxcar.shape)
-    
-    ds.createVariable('chl_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
-    ds.variables['chl_boxcar'].setncattr("units", "mg chl m^3")
-    ds.variables['chl_boxcar'][:] = chl_boxcar[:]
+    if not csv:
+        ds.createVariable('chl_boxcar', 'float32', dimensions=['TIME', 'DEPTH', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
+        ds.variables['chl_boxcar'].setncattr("units", "mg chl m^3")
+        ds.variables['chl_boxcar'][:] = chl_boxcar[:]
 
-    ds.close()
+        ds.close()
 
     logger.info("chl prep complete")
+    if csv:
+        return chl_boxcar.shape, USE_DTYPE, chl_median, std_dev, max_means, perc_val_change, filled_chl, chl_boxcar
     return chl_boxcar.shape, USE_DTYPE, chl_median, std_dev, max_means, perc_val_change, filled_chl
 
 
@@ -1188,6 +1264,40 @@ def write_to_output_netcdf(data, total_blooms=None, probability=None, date=False
     logger.info("wrote {} years of data".format(len(ds.variables['TIME'][:])))
     ds.close()
 
+def write_to_output_csv(data, total_blooms=None, probability=None, date=False, output_location_date=output_location_date, output_location=output_location):
+    """
+    Loops through each year in the numpy array and writes the data to the netcdf file, this should work faster if we get rid of the loop but I can't seem to grock the logic to fix it right now.
+    """
+
+    year_counter=0
+    primary = [["year", "year_start_index", "date_start1_index", "date_max1_index", "date_end1_index", "duration1_index", "max_val1", "date_start1_date", "date_max1_date", "date_end1_date",  "total_blooms"]]
+    secondary = []
+    for year in data[0][0]:
+        date_zero_yearly = date_zero_datetime
+        date_zero_yearly = date_zero_yearly.replace(year=date_zero_datetime.year + year_counter)
+
+        date_conversions_prim = [(date_zero_yearly + datetime.timedelta(days=(int(d) * math.ceil(365 / date_seperation_per_year) - 1))).strftime("%d/%m/%Y")  if not numpy.isnan(d) else "--" for d in [year[0][0], year[0][3], year[0][1]]]
+        date_conversions_sec = [(date_zero_yearly + datetime.timedelta(days=(int(d) * math.ceil(365 / date_seperation_per_year) - 1))).strftime("%d/%m/%Y")  if not numpy.isnan(d) else "--" for d in [year[1][0], year[1][3], year[1][1]]]
+
+        primary.append([year_counter, year_counter * date_seperation_per_year, *[str(d) for d in [year[0][0], year[0][3], year[0][1], year[0][2], year[0][4]]], *date_conversions_prim, total_blooms[0][0][year_counter]])
+        secondary.append([year_counter, year_counter * date_seperation_per_year, *[str(d) for d in [year[1][0], year[1][3], year[1][1], year[1][2], year[1][4]]], *date_conversions_sec, total_blooms[0][0][year_counter]])
+        year_counter += 1
+    primary.append(["secondary bloom", *["" for x in range(0, len(primary[-1]) -1)]])
+    primary.append(["year", "year_start_index",  "date_start2_index", "date_max2_index", "date_end2_index", "duration2_index", "max_val2","date_start2_date","date_max2_date", "date_end2_date", "total_blooms"])
+    primary.extend(secondary)
+
+    if date:
+        output = output_location_date
+    else:
+        output = output_location
+    with open(output, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerows(primary)
+    
+    logger.info("succesfully written to {}".format(output))
+
+
+
 def create_intermediate_netcdf(output_name, chl_lons, chl_lats):
     global chunk_size
     global zlib_compression
@@ -1230,27 +1340,31 @@ def create_intermediate_netcdf(output_name, chl_lons, chl_lats):
 def total_blooms_to_probability(array_like):
     return numpy.count_nonzero(array_like == 2) / array_like.size
 
-def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=47, start_date=0, reverse_search=20, reference_index=0, out_netcdf=output_location, out_date_netcdf=output_location_date, chunk_idx=None, end_date=False):
+def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=47, start_date=0, reverse_search=20, reference_index=0, out_netcdf=output_location, out_date_netcdf=output_location_date, chunk_idx=None, end_date=False, sst_der=None, chl_boxcar=None, csv=False):
     #this all works on the assumption the axis 0 is time
     global debug_pixel_main
     global extend_chl_array
 
-    ds = nc.Dataset(output_name.replace(".nc", "_intermediate_products.nc".format(chunk)),'r',format='NETCDF4_CLASSIC')
-    
-    logger.info("reading variables")
-    chl_boxcar = ds.variables["chl_boxcar"][:]
+    if not csv:
+        ds = nc.Dataset(output_name.replace(".nc", "_intermediate_products.nc".format(chunk)),'r',format='NETCDF4_CLASSIC')
+        
+        logger.info("reading variables")
+        chl_boxcar = ds.variables["chl_boxcar"][:]
+
+
+        logger.info(sst_dtype)
+        sst_der = ds.variables["sst_der"][:]
+        logger.info("shapes after reading sst: {} chl: {}".format(chl_boxcar.shape, sst_der.shape))
+        logger.info("reshaping to sst: {} chl: {}".format(sst_shape, chl_shape))
+        sst_der.shape = sst_shape
+        chl_boxcar.shape = chl_shape
 
     if not end_date:
         end_date = chl_boxcar.shape[0]
         if extend_chl_array:
             logger.debug("found extend array bool so removing final year")
             end_date = end_date - date_seperation_per_year
-    logger.info(sst_dtype)
-    sst_der = ds.variables["sst_der"][:]
-    logger.info("shapes after reading sst: {} chl: {}".format(chl_boxcar.shape, sst_der.shape))
-    logger.info("reshaping to sst: {} chl: {}".format(sst_shape, chl_shape))
-    sst_der.shape = sst_shape
-    chl_boxcar.shape = chl_shape
+
 
 
     logger.info("doing yearly evaluation, this may take up a lot of memory, if so double check all memmaps have been flushed")
@@ -1280,7 +1394,8 @@ def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, c
                     logger.info("debug pixel {} {} encountered".format(ix,iy))
                     verbose = True
             else:
-                logger.setLevel(default_logging)
+                if not csv:
+                    logger.setLevel(default_logging)
                 pass
             results = match_start_end_to_solar_cycle(sst_der[:,:,ix,iy],
                                                      chl_boxcar[:,:,ix,iy],
@@ -1328,8 +1443,12 @@ def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, c
     logger.info("done sst initiations and correction")
     logger.info("writing to netcdf")
     #needs to be extended to be able to output 3 files: sorted by calendar year, one with primary and secondary chloropjhyll maximum
-    write_to_output_netcdf(year_true_start_end_array, total_blooms=total_blooms, probability=probability_array, output_location=out_netcdf)
-    write_to_output_netcdf(blooms_by_date, total_blooms=total_blooms_date, probability=probability_array_date, date=True, output_location_date=out_date_netcdf)
+    if not csv:
+        write_to_output_netcdf(year_true_start_end_array, total_blooms=total_blooms, probability=probability_array, output_location=out_netcdf)
+        write_to_output_netcdf(blooms_by_date, total_blooms=total_blooms_date, probability=probability_array_date, date=True, output_location_date=out_date_netcdf)
+    else:
+        write_to_output_csv(year_true_start_end_array, total_blooms=total_blooms, probability=probability_array, output_location=out_netcdf.replace("nc", "csv"))
+        write_to_output_csv(blooms_by_date, total_blooms=total_blooms_date, probability=probability_array_date, date=True, output_location_date=out_date_netcdf.replace("nc", "csv"))
 
     
 def extend_array(array_like, entries_per_year, start_date=0):
@@ -1420,7 +1539,7 @@ def chunk_by_chunk(chunk_idx, chunk):
     slc[LON_IDX] = slice(x[0], x[1])
     slc[LAT_IDX] = slice(y[0], y[1])
 
-    output = chl_filename.replace(".nc", "_phenology_{}_chunk{}.nc".format(time_of_run, chunk_idx))
+    output = chl_filename.replace(".nc", "_phenology_{}.nc".format(time_of_run))
 
     chl_lock.acquire()
     chl_array = chl_ds.variables[chl_variable][slc]
@@ -1563,6 +1682,124 @@ def chunk_by_chunk(chunk_idx, chunk):
     logger.setLevel(default_logging)
     return True
 
+def do_csv(csv_data, csv_filename):
+    global start_date
+    global debug_pixel_main
+    debug_pixel_main= [999,999,999]
+    logger.setLevel(logging.DEBUG)
+    logger.info("working with a csv file")
+
+    output = csv_filename.replace(".csv", "_phenology_{}.csv".format(time_of_run))
+
+    time_data = csv_data[:,0].astype(int)
+    chl_array = csv_data[:,1]
+    sst_array = csv_data[:,2]
+
+    chl_array.shape=(chl_array.shape[0],1,1,1)
+    sst_array.shape=(sst_array.shape[0],1,1,1)
+
+    chunk_start_date = start_date
+
+    chl_array = numpy.ma.masked_array(chl_array, numpy.isnan(chl_array))
+    chl_array = numpy.ma.masked_where(chl_array == chl_array.fill_value, chl_array)
+    chl_array = numpy.ma.masked_where(chl_array <= 0, chl_array)
+    chl_array = numpy.ma.masked_invalid(chl_array)
+    if chl_array.mask.all():
+        logger.info(numpy.isnan(chl_array).all())
+        logger.info("skipping as empty")
+        chl_lock.release()
+        #output empty netcdf
+        empty_med = numpy.empty((chl_lats.shape[0], chl_lons.shape[0]), dtype=chl_array.dtype) if LAT_IDX >LON_IDX else numpy.empty(shape=(chl_lons.shape[0], chl_lats.shape[0]), dtype=chl_array.dtype)
+        return True
+
+    if args.extend_chl_data:
+        chl_array, chunk_start_date = extend_array(chl_array, date_seperation_per_year, chunk_start_date)
+        logger.info("start date after extension: {}".format(chunk_start_date))
+
+    sst_time = time_data
+    logger.info("sst array shape at read:{}".format(sst_array.shape))
+
+    sst_fill_val = FILL_VAL
+    
+    if not numpy.ma.is_masked(sst_array):
+        logger.debug("sst is not a masked array, masking it")
+        sst_array = numpy.ma.masked_array(sst_array, numpy.isnan(sst_array))
+        sst_array = numpy.ma.masked_where(sst_array == sst_fill_val, sst_array)
+
+    if args.extend_sst_data:
+        logger.debug("extending sst array by repeating year at start and end")
+        sst_array, _ = extend_array(sst_array, date_seperation_per_year, start_date)
+
+    chl_shape, chl_dtype, chl_median, chl_std_dev, chl_max_means, perc_val_change, filled_chl, chl_boxcar = prepare_chl_variables(chl_array, 
+                                                                          0, 
+                                                                          date_seperation_per_year, 
+                                                                          0, 
+                                                                          0, 
+                                                                          modelled_threshold=args.modelled_threshold, 
+                                                                          median_threshold=med_thresh,
+                                                                          chunk_idx=0,
+                                                                          std_dev_anomaly=do_std_dev,
+                                                                          std_dev_threshold=std_dev_threshold,
+                                                                          relative_max_anomaly=do_rel_max,
+                                                                          max_means_threshold=max_means_threshold,
+                                                                          max_means_anomaly=do_max_means,
+                                                                          relative_median_anomaly=do_rel_med_anomaly,
+                                                                          do_fill_chl=fill_chl,
+                                                                          output_name=None,
+                                                                          date_seperation_per_year=date_seperation_per_year,
+                                                                          csv=True)
+    logger.info("chl_shape: {}".format(chl_shape))
+    logger.info("chl_dtype: {}".format(USE_DTYPE))
+
+    chl_ngd = get_chl_ngd(chunk_start_date, date_seperation_per_year, filled_chl)
+
+    sst_shape, sst_dtype, sst_der, filled_sst = prepare_sst_variables(sst_array, 0, skip=args.skip_sst_prep,chunk_idx=0, output_name=None, csv=True)
+    dates = [str((date_zero_datetime + datetime.timedelta(days=d)).strftime("%d-%m-%Y")) for d in range(0, filled_chl.shape[0])]
+
+    filled_data = numpy.column_stack([dates, filled_chl.flatten(), filled_sst.flatten(), chl_boxcar.flatten(), sst_der.flatten()])
+
+    with open(output.replace(".csv", "_intermediate_products.csv"), "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerows(filled_data)
+    print(filled_data)
+
+    logger.info("sst_shape: {}".format(sst_shape))
+    logger.info("sst_dtype: {}".format(USE_DTYPE))
+    sst_array = None
+
+    if sst_shape[2:] != chl_shape[2:]:
+        logger.error("sst and chlorophyll x,y array shapes do not match got:")
+        logger.error("chlorophyll: {}".format(chl_shape[2:]))
+        logger.error("sst: {}".format(sst_shape[2:]))
+        logger.error("quitting!")
+        sys.exit()
+    if not isinstance(filled_chl.mask, numpy.ndarray):
+        logger.error(filled_chl.mask)
+        logger.error("chl data has no mask for its variable data, this will completely break our logic")
+        sys.exit()
+        return
+
+    logger.info("using start date {}".format(chunk_start_date))
+    get_multi_year_two_blooms_output(output,
+                                    0,
+                                    chl_shape,
+                                    chl_dtype, 
+                                    filled_chl, 
+                                    sst_shape, 
+                                    sst_dtype, 
+                                    date_seperation_per_year=date_seperation_per_year, 
+                                    start_date=chunk_start_date, 
+                                    reverse_search=reverse_search,
+                                    reference_index=ref_index,
+                                    out_date_netcdf=output.replace(".csv", "_by_date.nc"),
+                                    out_netcdf=output.replace(".csv", "_by_maxval.nc"),
+                                    chunk_idx=0,
+                                    chl_boxcar=chl_boxcar,
+                                    sst_der=sst_der,
+                                    csv=True)
+    
+    return True
+
 def ds_to_dim_vars(ds):
     lon_var, lat_var, time_var = (None,)*3
     try:
@@ -1645,8 +1882,10 @@ def get_ds_time_data(ds, time_var, begin_date=False, var="chl"):
         logger.info("start year: "+str(START_YEAR))
         logger.info("getting {} missing timesteps".format(var))
         start_difference = init_date - datetime.datetime(year=init_date.year, month=1, day=1)
+        logger.info(start_difference)
         logger.info(end_date)
         end_difference =  datetime.datetime(year=end_date.year, month=12, day=31) - end_date
+        logger.info(end_difference)
         missing_dates_at_start = start_difference.days// math.ceil(365 / date_seperation_per_year)
         missing_dates_at_end = end_difference.days// math.ceil(365 / date_seperation_per_year)
         logger.info("missing steps to january at start of file: {}".format(missing_dates_at_start))
@@ -1658,6 +1897,54 @@ def get_ds_time_data(ds, time_var, begin_date=False, var="chl"):
 
     return REF_MONTH, START_YEAR, missing_dates_at_start, missing_dates_at_end, ds[time_var].shape[0], start_datetime
 
+
+def get_csv_time_data(csv_data, time_var=2, begin_date=False, var="chl"):
+    global date_seperation_per_year
+    logger.info("ds time var shape: {}".format(csv_data.shape[0]))
+    try:
+        if not date_seperation_per_year:
+            #we cant guess
+            logger.error("please specify number of indexes per year with --date_seperation_per_year (e.g. --date_seperation_per_year 46 would mean 46 steps per year")
+            sys.exit()
+        logger.info(f"time steps per step {math.ceil(365 / date_seperation_per_year)}")
+        init_date = datetime.datetime.strptime(begin_date, '%d/%m/%Y')
+        start_datetime = datetime.datetime(year=init_date.year,month=1,day=1) + datetime.timedelta(days=(365 * (start_date / date_seperation_per_year)))
+        ref_date =  datetime.datetime(year=init_date.year,month=1,day=1) + datetime.timedelta(days=(365 * (start_date +ref_index / date_seperation_per_year)))
+        logger.info("number of days between start and end")
+        logger.info(csv_data.shape[0] * math.ceil(365 / date_seperation_per_year))
+        end_date = init_date  + datetime.timedelta(days=((csv_data.shape[0] * math.ceil(365 / date_seperation_per_year))))
+        true_years = math.ceil(csv_data.shape[0] / date_seperation_per_year)
+        true_years = true_years if true_years > 0 else 0 
+        #end_date = datetime.datetime(year=end_date.year+true_years, month=init_date.month, day=init_date.day)
+        #end_date = end_date - datetime.timedelta(days=1)
+        logger.info(f"after year extension remaining year is {(true_years % 1)}")
+        if not (true_years % 1) == 0:
+            remainder_days = csv_data.shape[0] - (true_years * date_seperation_per_year)
+            end_date = end_date + datetime.timedelta(days=remainder_days  * math.ceil(365 / date_seperation_per_year))
+
+        logger.info(ref_date)
+        REF_MONTH = ref_date.strftime("%d %B")
+        START_YEAR = start_datetime.year
+        logger.info("reference date selected: "+ref_date.strftime("%d/%m/%Y"))
+        logger.info("start date selected: "+start_datetime.strftime("%d/%m/%Y"))
+        logger.info(f"end date selected {end_date}")
+        logger.info(f"end date steps {csv_data.shape[0]}")
+        logger.info("reference month: "+ REF_MONTH)
+        logger.info("start year: "+str(START_YEAR))
+        logger.info("getting {} missing timesteps".format(var))
+        start_difference = init_date - datetime.datetime(year=init_date.year, month=1, day=1)
+        logger.info(end_date)
+        end_difference =  datetime.datetime(year=end_date.year, month=12, day=31) - end_date
+        missing_dates_at_start = start_difference.days// math.ceil(365 / date_seperation_per_year)
+        missing_dates_at_end = end_difference.days// math.ceil(365 / date_seperation_per_year)
+        logger.info("missing steps to january at start of file: {}".format(missing_dates_at_start))
+        logger.info("missing steps to december at end of file: {}".format(missing_dates_at_end))
+    except Exception as e:
+        logger.error(e)
+        logger.error("could not identify {} start date, please specify the first date you expect in the file (time index 0, not first date index) with --{}_begin_date e.g. --chl_begin_date 01/01/1997".format(var, var))
+        sys.exit()
+
+    return REF_MONTH, START_YEAR, missing_dates_at_start, missing_dates_at_end, csv_data.shape[0], start_datetime
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -1707,6 +1994,7 @@ if __name__ == "__main__":
     parser.add_argument("--minimum_bloom_duration", type=int, default=15, help="the minimum duration in days for a bloom to be retained, this is converted to timesteps by: timesteps_per_year * (days / 365). Default 15.")
     parser.add_argument("--chunk_size", type=int, default=DEFAULT_CHUNKS, help="size of chunks along one side to process (e.g. value of 200 becomes 200x200 chunk")
     parser.add_argument("--minimum_bloom_seperation_duration", type=int, default=10, help="the minimum days between a two initiation dates, this is converted to timesteps by: timesteps_per_year * (days / 365). Default 15.")
+    parser.add_argument("--csv", action='store_true', default=False, help="specify chl_location is a csv file, in format date,chlorophyll,sst - replaces inputs above. dates should either be in int or yyyy/mm/dd")
     args = parser.parse_args()
     if args.extend_chl_data:
         one_year_only_output = True
@@ -1720,8 +2008,12 @@ if __name__ == "__main__":
     time_of_run = datetime.datetime.now().strftime("%Y%m%d%H%M")
     if not args.no_logfile:
         if len(args.chl_location) == 1:
-            handler = logging.FileHandler(args.chl_location[0].replace(".nc", "_phenology_{}.logfile".format(time_of_run)))
-            logger.info("initilised logfile at {}".format(args.chl_location[0].replace(".nc", "_phenology_{}.logfile".format(time_of_run))))
+            if args.csv:
+                handler = logging.FileHandler(args.chl_location[0].replace(".csv", "_phenology_{}.logfile".format(time_of_run)))
+                logger.info("initilised logfile at {}".format(args.chl_location[0].replace(".csv", "_phenology_{}.logfile".format(time_of_run))))
+            else:
+                handler = logging.FileHandler(args.chl_location[0].replace(".nc", "_phenology_{}.logfile".format(time_of_run)))
+                logger.info("initilised logfile at {}".format(args.chl_location[0].replace(".nc", "_phenology_{}.logfile".format(time_of_run))))
         else:
             handler = logging.FileHandler("phenology_bulk_run_{}.logfile".format(time_of_run))
             logger.info("initilised logfile at {}".format("phenology_bulk_run_{}.logfile".format(time_of_run)))
@@ -1760,6 +2052,16 @@ if __name__ == "__main__":
 
     #TODO list of files or file specified (mid november)
     for chl_location in args.chl_location:
+        default_logging = logging.INFO
+        if args.csv:
+            csv_data = numpy.loadtxt(chl_location, delimiter=",")
+            time_data = csv_data[:,0].astype(int)
+            chl_array = csv_data[:,1]
+            sst_array = csv_data[:,2]
+            REF_MONTH, START_YEAR, missing_chl_dates_at_start, missing_chl_dates_at_end, chl_time_len, date_zero_datetime = get_csv_time_data(csv_data, begin_date=args.chl_begin_date, var="chl")
+            sst_ref_month, sst_ref_year, missing_sst_dates_at_start, missing_sst_dates_at_end, sst_time_len, sst_zero_datetime = get_csv_time_data(csv_data, begin_date=args.sst_begin_date, var="sst")
+            do_csv(csv_data, chl_location)
+            continue
         chl_files = chl_location
         logger.info("calculating on {}".format(chl_files))
         chl_filename = chl_location
@@ -1799,8 +2101,8 @@ if __name__ == "__main__":
         if args.debug_pixel:
             #debug_lat = find_nearest(chl_lats, args.debug_pixel[0]) if find_nearest(chl_lats, args.debug_pixel[0]) > 0 else 1
             #debug_lon = find_nearest(chl_lons, args.debug_pixel[1]) if find_nearest(chl_lons, args.debug_pixel[1]) > 0 else 1
-            debug_lat = find_nearest(chl_lats, args.debug_pixel[0])
-            debug_lon = find_nearest(chl_lons, args.debug_pixel[1])
+            debug_lat = find_nearest(chl_lats, float(args.debug_pixel[0]))
+            debug_lon = find_nearest(chl_lons, float(args.debug_pixel[1]))
             logger.info(f"debug lat {chl_lats[debug_lat]}, debug lon {chl_lons[debug_lon]}")
             debug_pixel = [debug_lat, debug_lon]
         else:
@@ -1816,7 +2118,10 @@ if __name__ == "__main__":
         logger.info(debug_pixel)
         debug_pixel_main = [[debug_pixel_main[0] - chunk[0][0], debug_pixel_main[1] - chunk[1][0], chunk_idx] for chunk_idx, chunk in enumerate(chunks) if chunk[0][0] < debug_pixel_main[0] and chunk[0][1] > debug_pixel_main[0] and chunk[1][0] < debug_pixel_main[1] and chunk[1][1] > debug_pixel_main[1]][0]
         logger.info(debug_pixel_main)
-        logger.info("using debug pixel: {} which equates to: {} N {} E (zero indexed so you may need to add 1 to get reference in other software)".format(debug_pixel, chl_lats[debug_pixel_main[0]], chl_lons[debug_pixel_main[1]]))
+        if LON_IDX < LAT_IDX :
+            logger.info("using debug pixel: {} which equates to: {} N {} E (zero indexed so you may need to add 1 to get reference in other software)".format(debug_pixel, chl_lats[debug_pixel_main[0]], chl_lons[debug_pixel_main[1]]))
+        else:
+            logger.info("using debug pixel: {} which equates to: {} N {} E (zero indexed so you may need to add 1 to get reference in other software)".format(debug_pixel, chl_lats[debug_pixel_main[1]], chl_lons[debug_pixel_main[0]]))
         
         debug_pixel_only = args.debug_pixel_only
 
@@ -1827,7 +2132,7 @@ if __name__ == "__main__":
         sizes = [item for chunk in chunks for item in [chunk[0][1] -chunk[0][0], chunk[1][1] -chunk[1][0]]]
         min_size = min(sizes)
     
-        default_logging = logging.INFO
+        
         if not args.stitch_only:
             if args.threads != 0 and not args.no_thread:
                 logger.info("disabling numpy warnings to reduce spam during threaded processing")

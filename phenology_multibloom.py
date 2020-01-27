@@ -123,7 +123,7 @@ def get_start_index_and_duration(array_like,chl_values,date_offset,depth=5, pad_
     global duration_minimum_value
     global start_minimum_seperation_value
     #before we do anything else, because the boxcar method gives us an output that is 0.0 in place of nans we should increment those by 0.0001 so that the polariser can find them
-    array_like[array_like==0.0] = 0.0001
+    array_like[array_like==0.0] = -0.0001
     #unique, counts = numpy.unique(array_like, counts=True)
     #counts = dict(zip(unique, counts))
     #array_like = numpy.squeeze(array_like)
@@ -1081,6 +1081,7 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
 
     if not missing_chl_dates_at_start - math.floor(additional_steps) < 0:
         logger.info("padding {} time steps from january {} in chl boxcar".format(missing_chl_dates_at_start - math.floor(additional_steps), START_YEAR))
+        print(len([x for x in range(math.floor(additional_steps), missing_chl_dates_at_start)]))
         start_fill_arrays = [fill_arr for i in range(math.floor(additional_steps), missing_chl_dates_at_start)]
     else:
         start_fill_arrays = missing_chl_dates_at_start - math.floor(additional_steps)
@@ -1090,6 +1091,7 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
 
     if not missing_chl_dates_at_end - math.ceil(additional_steps) < 0:
         logger.info("padding {} time steps to december in chl boxcar".format(missing_chl_dates_at_end - math.ceil(additional_steps), START_YEAR))
+        print(len([x for x in range(math.ceil(additional_steps), missing_chl_dates_at_end)]))
         end_fill_arrays = [fill_arr for i in range(math.ceil(additional_steps), missing_chl_dates_at_end)]
     else:
         end_fill_arrays = missing_chl_dates_at_end - math.ceil(additional_steps)
@@ -1884,10 +1886,16 @@ def get_ds_time_data(ds, time_var, begin_date=False, var="chl"):
         start_difference = init_date - datetime.datetime(year=init_date.year, month=1, day=1)
         logger.info(start_difference)
         logger.info(end_date)
+
         end_difference =  datetime.datetime(year=end_date.year, month=12, day=31) - end_date
+
         logger.info(end_difference)
         missing_dates_at_start = start_difference.days// math.ceil(365 / date_seperation_per_year)
-        missing_dates_at_end = end_difference.days// math.ceil(365 / date_seperation_per_year)
+        if calendar.isleap(end_date.year):
+            missing_dates_at_end = (end_difference.days - 1)// math.ceil(365 / date_seperation_per_year)
+        else:
+            missing_dates_at_end = end_difference.days// math.ceil(365 / date_seperation_per_year)
+
         logger.info("missing steps to january at start of file: {}".format(missing_dates_at_start))
         logger.info("missing steps to december at end of file: {}".format(missing_dates_at_end))
     except Exception as e:
@@ -1936,7 +1944,10 @@ def get_csv_time_data(csv_data, time_var=2, begin_date=False, var="chl"):
         logger.info(end_date)
         end_difference =  datetime.datetime(year=end_date.year, month=12, day=31) - end_date
         missing_dates_at_start = start_difference.days// math.ceil(365 / date_seperation_per_year)
-        missing_dates_at_end = end_difference.days// math.ceil(365 / date_seperation_per_year)
+        if calendar.isleap(end_date.year):
+            missing_dates_at_end = (end_difference.days - 1)// math.ceil(365 / date_seperation_per_year)
+        else:
+            missing_dates_at_end = end_difference.days// math.ceil(365 / date_seperation_per_year)
         logger.info("missing steps to january at start of file: {}".format(missing_dates_at_start))
         logger.info("missing steps to december at end of file: {}".format(missing_dates_at_end))
     except Exception as e:

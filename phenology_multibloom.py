@@ -793,7 +793,6 @@ def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_n
     if not missing_sst_dates_at_start - math.floor(additional_steps) < 0:
         logger.info("padding {} time steps from january {} in sst_der".format(missing_sst_dates_at_start + -math.floor(additional_steps), START_YEAR))
         start_fill_arrays = [fill_arr for i in range(math.floor(additional_steps), missing_sst_dates_at_start)]
-        print(len(start_fill_arrays))
     else:
         start_fill_arrays = missing_sst_dates_at_start - math.floor(additional_steps)
 
@@ -803,7 +802,6 @@ def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_n
     if not missing_sst_dates_at_end - math.ceil(additional_steps) < 0:
         logger.info("padding {} time steps to december in sst der".format(missing_sst_dates_at_end - math.ceil(additional_steps), START_YEAR))
         end_fill_arrays = [fill_arr for i in range(math.ceil(additional_steps), missing_sst_dates_at_end)]
-        print(len(end_fill_arrays))
     else:
         end_fill_arrays = missing_sst_dates_at_end - math.ceil(additional_steps)
 
@@ -820,6 +818,7 @@ def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_n
         logger.info(sst_der.shape)    
 
     logger.info((sst_der.shape[0], len(start_fill_arrays), len(end_fill_arrays)))
+    logger.info(sst_der.shape[0] + len(start_fill_arrays) + len(end_fill_arrays))
     if not (sst_der.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year == 0:
         logger.error("After padding, the sst derivitive end product did not divide equally! shape is {} and division is {}".format((sst_der.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)), (sst_der.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year))
         raise Exception("After padding, the sst derivitive end product did not divide equally!")
@@ -1081,7 +1080,6 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
 
     if not missing_chl_dates_at_start - math.floor(additional_steps) < 0:
         logger.info("padding {} time steps from january {} in chl boxcar".format(missing_chl_dates_at_start - math.floor(additional_steps), START_YEAR))
-        print(len([x for x in range(math.floor(additional_steps), missing_chl_dates_at_start)]))
         start_fill_arrays = [fill_arr for i in range(math.floor(additional_steps), missing_chl_dates_at_start)]
     else:
         start_fill_arrays = missing_chl_dates_at_start - math.floor(additional_steps)
@@ -1091,7 +1089,6 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
 
     if not missing_chl_dates_at_end - math.ceil(additional_steps) < 0:
         logger.info("padding {} time steps to december in chl boxcar".format(missing_chl_dates_at_end - math.ceil(additional_steps), START_YEAR))
-        print(len([x for x in range(math.ceil(additional_steps), missing_chl_dates_at_end)]))
         end_fill_arrays = [fill_arr for i in range(math.ceil(additional_steps), missing_chl_dates_at_end)]
     else:
         end_fill_arrays = missing_chl_dates_at_end - math.ceil(additional_steps)
@@ -1108,9 +1105,9 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
         start_fill_arrays=[] 
         logger.info(chl_boxcar.shape)
 
-    
     if not (chl_boxcar.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year == 0:
         logger.error("After padding, the chlorophyll boxcar end product did not divide equally!")
+        logger.error("shape was: (shape, datesep, division)")
         logger.error((chl_boxcar.shape[0] + len(start_fill_arrays) + len(end_fill_arrays), date_seperation_per_year, (chl_boxcar.shape[0] + len(start_fill_arrays) + len(end_fill_arrays)) % date_seperation_per_year))
         raise Exception("After padding, the chlorophyll boxcar end product did not divide equally!")
     
@@ -1688,7 +1685,7 @@ def do_csv(csv_data, csv_filename):
     global start_date
     global debug_pixel_main
     debug_pixel_main= [999,999,999]
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.ERROR)
     logger.info("working with a csv file")
 
     output = csv_filename.replace(".csv", "_phenology_{}.csv".format(time_of_run))
@@ -1763,7 +1760,7 @@ def do_csv(csv_data, csv_filename):
     with open(output.replace(".csv", "_intermediate_products.csv"), "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerows(filled_data)
-    print(filled_data)
+
 
     logger.info("sst_shape: {}".format(sst_shape))
     logger.info("sst_dtype: {}".format(USE_DTYPE))
@@ -1920,6 +1917,7 @@ def get_csv_time_data(csv_data, time_var=2, begin_date=False, var="chl"):
         ref_date =  datetime.datetime(year=init_date.year,month=1,day=1) + datetime.timedelta(days=(365 * (start_date +ref_index / date_seperation_per_year)))
         logger.info("number of days between start and end")
         logger.info(csv_data.shape[0] * math.ceil(365 / date_seperation_per_year))
+        logger.info(f"dataset shape: {csv_data.shape[0]}")
         end_date = init_date  + datetime.timedelta(days=((csv_data.shape[0] * math.ceil(365 / date_seperation_per_year))))
         true_years = math.ceil(csv_data.shape[0] / date_seperation_per_year)
         true_years = true_years if true_years > 0 else 0 
@@ -1932,22 +1930,34 @@ def get_csv_time_data(csv_data, time_var=2, begin_date=False, var="chl"):
 
         logger.info(ref_date)
         REF_MONTH = ref_date.strftime("%d %B")
-        START_YEAR = start_datetime.year
+        START_YEAR = ref_date.year
         logger.info("reference date selected: "+ref_date.strftime("%d/%m/%Y"))
         logger.info("start date selected: "+start_datetime.strftime("%d/%m/%Y"))
-        logger.info(f"end date selected {end_date}")
+        logger.info(f"init date: {init_date.strftime('%d/%m/%Y')}")
+        logger.info(f"end date selected {end_date.strftime('%d/%m/%Y')}")
         logger.info(f"end date steps {csv_data.shape[0]}")
         logger.info("reference month: "+ REF_MONTH)
         logger.info("start year: "+str(START_YEAR))
         logger.info("getting {} missing timesteps".format(var))
-        start_difference = init_date - datetime.datetime(year=init_date.year, month=1, day=1)
+        start_difference = init_date - start_datetime
         logger.info(end_date)
         end_difference =  datetime.datetime(year=end_date.year, month=12, day=31) - end_date
+        logger.info(f"end difference:{end_difference}")
         missing_dates_at_start = start_difference.days// math.ceil(365 / date_seperation_per_year)
-        if  calendar.isleap(end_date.year) and (end_date > datetime.datetime(year=end_date.year, month=3, day = 1)):
+        if  calendar.isleap(end_date.year) and (end_date >= datetime.datetime(year=end_date.year, month=3, day = 1)):
+            logger.info("ends in leap year and over march 1st")
             missing_dates_at_end = (end_difference.days)// math.ceil(365 / date_seperation_per_year)
+        elif  calendar.isleap(end_date.year) and (end_date < datetime.datetime(year=end_date.year, month=3, day = 1)):
+            logger.info("ends in leap year and before march 1st")
+            missing_dates_at_end = (end_difference.days - 1)// math.ceil(365 / date_seperation_per_year)
         else:
-            missing_dates_at_end = (end_difference.days  - 1)// math.ceil(365 / date_seperation_per_year)
+            logger.info("ends in normal year")
+            missing_dates_at_end = (end_difference.days)// math.ceil(365 / date_seperation_per_year)
+        if date_seperation_per_year == 365 and not (csv_data.shape[0] + missing_dates_at_end + missing_dates_at_start) % date_seperation_per_year == 0:
+            missing_dates_at_end += 1
+
+
+
         logger.info("missing steps to january at start of file: {}".format(missing_dates_at_start))
         logger.info("missing steps to december at end of file: {}".format(missing_dates_at_end))
     except Exception as e:
@@ -2001,6 +2011,7 @@ if __name__ == "__main__":
     parser.add_argument("--stitch_only", action='store_true', default=False, help="Only try to stitch chunk files")
     parser.add_argument("--no_delete", action='store_true', default=False, help="Don't delete chunks")
     parser.add_argument("--no_chl_fill", action='store_true', default=False, help="Don't fill the chlorophyll variable")
+    parser.add_argument("--no_log", action='store_true', default=False, help="only print errors")
     parser.add_argument("--debug_chunk_only", action='store_true', default=False, help="Only process our debug pixel and its relative chunk")
     parser.add_argument("--minimum_bloom_duration", type=int, default=15, help="the minimum duration in days for a bloom to be retained, this is converted to timesteps by: timesteps_per_year * (days / 365). Default 15.")
     parser.add_argument("--chunk_size", type=int, default=DEFAULT_CHUNKS, help="size of chunks along one side to process (e.g. value of 200 becomes 200x200 chunk")
@@ -2011,6 +2022,9 @@ if __name__ == "__main__":
         one_year_only_output = True
     else:
         one_year_only_output = False
+    
+    if args.no_log:
+        logger.setLevel(logging.ERROR)
     extend_chl_array = args.extend_chl_data
     output_folder = args.output_folder if args.output_folder else os.path.dirname(args.chl_location[0])
     zlib_compression = not args.no_compress

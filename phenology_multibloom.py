@@ -1688,7 +1688,7 @@ def do_csv(csv_data, csv_filename):
     global start_date
     global debug_pixel_main
     debug_pixel_main= [999,999,999]
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
     logger.info("working with a csv file")
 
     output = csv_filename.replace(".csv", "_phenology_{}.csv".format(time_of_run))
@@ -1944,10 +1944,10 @@ def get_csv_time_data(csv_data, time_var=2, begin_date=False, var="chl"):
         logger.info(end_date)
         end_difference =  datetime.datetime(year=end_date.year, month=12, day=31) - end_date
         missing_dates_at_start = start_difference.days// math.ceil(365 / date_seperation_per_year)
-        if calendar.isleap(end_date.year):
-            missing_dates_at_end = (end_difference.days - 1)// math.ceil(365 / date_seperation_per_year)
+        if  calendar.isleap(end_date.year) and (end_date > datetime.datetime(year=end_date.year, month=3, day = 1)):
+            missing_dates_at_end = (end_difference.days)// math.ceil(365 / date_seperation_per_year)
         else:
-            missing_dates_at_end = end_difference.days// math.ceil(365 / date_seperation_per_year)
+            missing_dates_at_end = (end_difference.days  - 1)// math.ceil(365 / date_seperation_per_year)
         logger.info("missing steps to january at start of file: {}".format(missing_dates_at_start))
         logger.info("missing steps to december at end of file: {}".format(missing_dates_at_end))
     except Exception as e:

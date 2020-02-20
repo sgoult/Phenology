@@ -1276,8 +1276,8 @@ def write_to_output_csv(data, total_blooms=None, probability=None, date=False, o
         date_zero_yearly = date_zero_datetime
         date_zero_yearly = date_zero_yearly.replace(year=date_zero_datetime.year + year_counter)
 
-        date_conversions_prim = [(date_zero_yearly + datetime.timedelta(days=(int(d) * math.ceil(365 / date_seperation_per_year) - 1))).strftime("%d/%m/%Y")  if not numpy.isnan(d) else "--" for d in [year[0][0], year[0][3], year[0][1]]]
-        date_conversions_sec = [(date_zero_yearly + datetime.timedelta(days=(int(d) * math.ceil(365 / date_seperation_per_year) - 1))).strftime("%d/%m/%Y")  if not numpy.isnan(d) else "--" for d in [year[1][0], year[1][3], year[1][1]]]
+        date_conversions_prim = [(date_zero_yearly + datetime.timedelta(days=(int(d) * math.ceil(365 / date_seperation_per_year)))).strftime("%d/%m/%Y")  if not numpy.isnan(d) else "--" for d in [year[0][0], year[0][3], year[0][1]]]
+        date_conversions_sec = [(date_zero_yearly + datetime.timedelta(days=(int(d) * math.ceil(365 / date_seperation_per_year)))).strftime("%d/%m/%Y")  if not numpy.isnan(d) else "--" for d in [year[1][0], year[1][3], year[1][1]]]
 
         primary.append([year_counter, year_counter * date_seperation_per_year, *[str(d) for d in [year[0][0], year[0][3], year[0][1], year[0][2], year[0][4]]], *date_conversions_prim, total_blooms[0][0][year_counter]])
         secondary.append([year_counter, year_counter * date_seperation_per_year, *[str(d) for d in [year[1][0], year[1][3], year[1][1], year[1][2], year[1][4]]], *date_conversions_sec, total_blooms[0][0][year_counter]])

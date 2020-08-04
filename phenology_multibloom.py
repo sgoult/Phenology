@@ -861,6 +861,7 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
     """
     #median * 1.05
     global debug_pixel_main
+    global chl_array_fill_val
     #! here i would prfer we output the media value (without adding 5% to it)
 
     if not csv:
@@ -882,8 +883,8 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
         ds.createVariable('TIME', 'float32', dimensions=['TIME'], zlib=True)
         ds.variables['TIME'].setncattr("units", "years")
         #switch back to LATITIUDE and LONGITUDE, establish why the flipping of the axis makes everything go screwey
-
-    chl_array_fill_val = chl_array.fill_value
+    if not chl_array_fill_val:
+        chl_array_fill_val = chl_array.fill_value
     #TODO insert the solar zenith angle establishment, only if handed a modelled input (so add flag for --modelled-input)
     #Here we make a very big assumption that index 0 is january of the year being considered in the chlorophyll array.
     if modelled_threshold and not csv:
@@ -961,7 +962,7 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
             k = numpy.ones((5,1,1))
         chl_reshape = chl_array.copy()
         chl_reshape.shape = (chl_array.shape[0],chl_array.shape[2],chl_array.shape[3])
-
+        chl_reshape = numpy.ma.masked_where(chl_reshape == chl_array_fill_val, chl_reshape)
         #extend values beyond array edge, interpolate over nan values as opposed to filling them with the default fill value (-999999 or something similar)
         filled_chl = astropy.convolution.convolve(chl_reshape, k, boundary='extend', nan_treatment='interpolate', mask=chl_reshape.mask)/k.sum()
         logger.info("post filling shape {}".format(filled_chl.shape))
@@ -1130,7 +1131,6 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
     logger.info(filled_chl.mask.any())
     filled_chl = numpy.ma.concatenate(start_fill_arrays + [filled_chl] + end_fill_arrays)
     filled_chl = numpy.ma.masked_where(filled_chl == chl_array_fill_val, filled_chl)
-
     logger.info("mask post concatenation")
     logger.info(filled_chl.mask.any())
     if not csv:
@@ -1147,7 +1147,6 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
         ds.variables['chl_boxcar'][:] = chl_boxcar[:]
 
         ds.close()
-
     logger.info("chl prep complete")
     if csv:
         return chl_boxcar.shape, USE_DTYPE, chl_median, std_dev, max_means, perc_val_change, filled_chl, chl_boxcar
@@ -1464,11 +1463,14 @@ def extend_array(array_like, entries_per_year, start_date=0):
     A bit fragile since it makes a few assumptions about the time axis, but we should be fixing that elsewhere in the program
     """
     #take first year
+    fill_val = array_like.fill_value
     first_entry = array_like[start_date:start_date + entries_per_year]
     last_entry = array_like[-entries_per_year:]
     #stick em together
     output = numpy.concatenate([first_entry, array_like, last_entry], axis = 0)
     output = numpy.ma.masked_invalid(output)
+    numpy.ma.set_fill_value(output, fill_val)
+    output = numpy.ma.masked_where(output == fill_val, output)
     return output, start_date + entries_per_year
 
 def multi_proc_init(c, s, l):
@@ -1596,7 +1598,6 @@ def chunk_by_chunk(chunk_idx, chunk):
     if args.extend_chl_data:
         chl_array, chunk_start_date = extend_array(chl_array, date_seperation_per_year, chunk_start_date)
         logger.info("start date after extension: {}".format(chunk_start_date))
-
     if args.sst_location:
         sst_lock.acquire()
         logger.info("sst file provided, reading array")
@@ -1637,7 +1638,7 @@ def chunk_by_chunk(chunk_idx, chunk):
         if len(sst_array.shape) == 3:
             logger.info("reshaping sst to {}".format((sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])))
             sst_array.shape = (sst_array.shape[0], 1, sst_array.shape[1], sst_array.shape[2])
-
+    
     chl_shape, chl_dtype, chl_median, chl_std_dev, chl_max_means, perc_val_change, filled_chl = prepare_chl_variables(chl_array, 
                                                                           chunk_idx, 
                                                                           date_seperation_per_year, 
@@ -1679,8 +1680,8 @@ def chunk_by_chunk(chunk_idx, chunk):
     if not isinstance(filled_chl.mask, numpy.ndarray):
         logger.error(filled_chl.mask)
         logger.error("chl data has no mask for its variable data, this will completely break our logic")
-        sys.exit()
-        return
+        logger.error(filled_chl)
+        raise Exception("chl data has no mask for its variable data, this will completely break our logic")
     #create the output files
     create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_maxval.nc"), median=chl_median, std=chl_std_dev, max_means=chl_max_means, perc_val_change=perc_val_change)
     create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_date.nc"), date=True, median=chl_median, std=chl_std_dev, max_means=chl_max_means, perc_val_change=perc_val_change)
@@ -2078,7 +2079,10 @@ if __name__ == "__main__":
     parser.add_argument("--time_var", type=str, default="time", help="sspecify latitude variable (must be consistent in sst and chl)")
     parser.add_argument("--minimum_bloom_seperation_duration", type=int, default=10, help="the minimum days between a two initiation dates, this is converted to timesteps by: timesteps_per_year * (days / 365). Default 15.")
     parser.add_argument("--csv", action='store_true', default=False, help="specify chl_location is a csv file, in format date,chlorophyll,sst - replaces inputs above. dates should either be in int or yyyy/mm/dd")
+    parser.add_argument("--chl_fill_val", default=False, help="specify fill value, if not given will take from given netcdf")
     args = parser.parse_args()
+
+    chl_array_fill_val = args.chl_fill_val
     if args.extend_chl_data:
         one_year_only_output = True
     else:
@@ -2367,8 +2371,6 @@ if __name__ == "__main__":
             logger.error("problem found in files {}".format(intermediate_ds))
             continue
         for chunk_idx, chunk in tqdm.tqdm(chunks_and_idxs):
-            logger.info("on chunk")
-            logger.info(chunk_idx)
             intermediate_chunk_file = [x for x in intermediate_files if "chunk{}_".format(chunk_idx) in x]
             if len(intermediate_chunk_file):
                 slc = [slice(None)] * 4

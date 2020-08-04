@@ -906,8 +906,9 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
                 true_zen.append(zen)
             true_zens.append(true_zen)
             date_masks.append(date_zeniths)
+
         
-        temp_chl_array = chl_array
+        temp_chl_array = chl_array.copy()
 
         ds.createVariable('zen', 'float32', dimensions=['TIME', 'LATITUDE', 'LONGITUDE'],fill_value=FILL_VAL, zlib=True)
         ds.variables['zen'].setncattr("units", "degrees")
@@ -915,9 +916,9 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
             for index, date_mask in enumerate(date_masks):
                 for row, row_mask in enumerate(date_mask):
                     if not row_mask:
-                        if LAT_IDX == 2:
+                        if LAT_IDX < LON_IDX:
                             temp_chl_array.mask[year + index,0,row,:] = True
-                        if LAT_IDX == 3:
+                        if LAT_IDX > LON_IDX:
                             temp_chl_array.mask[year + index,0,:,row] = True
                     ds.variables['zen'][year + index,row,:] = true_zens[index][row]
 
@@ -2203,7 +2204,6 @@ if __name__ == "__main__":
 
         chunks = [(x, y) for x in zip(list(range(0, chl_lons.shape[0], args.chunk_size)),list(range(args.chunk_size,chl_lons.shape[0], args.chunk_size))+ [chl_lons.shape[0]]) 
                          for y in zip(list(range(0, chl_lats.shape[0], args.chunk_size)), list(range(args.chunk_size, chl_lats.shape[0], args.chunk_size)) + [chl_lats.shape[0]])]
-        print(chunks)
 
         logger.info(debug_pixel)
         chunks_and_idxs = [(chunk_idx, chunk) for chunk_idx, chunk in enumerate(chunks)]
@@ -2397,6 +2397,8 @@ if __name__ == "__main__":
                     except:
                         logger.error("failed on {}".format(var))
                         continue
+                if 'zen' in intermediate_ds.variables.keys():
+                    intermediate_ds['zen'][med_prob_slc] = intermediate_chunk['zen'][:]
                 intermediate_chunk.close()
                 if not args.no_delete:
                     os.remove(intermediate_chunk_file[0])

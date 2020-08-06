@@ -446,6 +446,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
     ngds_date = []
     total_blooms = []
     blooms_by_date = []
+    blooms_by_duration = []
     logger.debug("performing year filtering from {}".format(start_date))
     #remove any year that doesn't have full 12 months of coverage
     logger.debug("list of years being considered:")
@@ -661,6 +662,13 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             blooms.append([low,high])
         else:
             blooms.append([high,low])
+        
+        high_dura = high[2] if high[2] else -1000
+        low_dura = low[2] if low[2] else -1000
+        if low_dura < high_dura:
+            blooms_by_duration.append([low,high])
+        else:
+            blooms_by_duration.append([high,low])
 
         
         #Alternative date sorting, based on start date
@@ -678,7 +686,6 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
             blooms_by_date.append([low, high])
         else:
             blooms_by_date.append([low, high])
-        
 
         """
         date_sorted = [None, None]
@@ -732,7 +739,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         total_blooms.append(len(possible_high_blooms) + len(possible_low_blooms))
     logger.debug((blooms, ngds, blooms_by_date, ngds_date, total_blooms))
 
-    return blooms, ngds, blooms_by_date, ngds_date, total_blooms
+    return blooms, ngds, blooms_by_date, ngds_date, total_blooms, blooms_by_duration
 
 def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_name=None, csv=False):
     """
@@ -1160,10 +1167,7 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     """
     global chunk_size
     global zlib_compression
-    if date:
-        output_location_date = name
-    else:
-        output_location = name
+
     ds = nc.Dataset(name,'w',format='NETCDF4_CLASSIC')
     ds.createDimension('LONGITUDE', chl_lons.shape[0])
     ds.createDimension('LATITUDE', chl_lats.shape[0])
@@ -1230,16 +1234,13 @@ def create_phenology_netcdf(chl_lons, chl_lats, output_shape=None,name="phenolog
     ds.close()
     logger.info("created netcdf {}".format(name))
 
-def write_to_output_netcdf(data, total_blooms=None, probability=None, date=False, output_location_date=output_location_date, output_location=output_location):
+def write_to_output_netcdf(data, total_blooms=None, probability=None, date=False, output_location=output_location):
     """
     Loops through each year in the numpy array and writes the data to the netcdf file.
     """
-    if date:
-        ds = nc.Dataset(output_location_date,'r+',format='NETCDF4_CLASSIC')
-        logger.info("writing to: {}".format(output_location_date))
-    else:
-        ds = nc.Dataset(output_location,'r+',format='NETCDF4_CLASSIC')
-        logger.info("writing to: {}".format(output_location))
+
+    ds = nc.Dataset(output_location,'r+',format='NETCDF4_CLASSIC')
+    logger.info("writing to: {}".format(output_location))
     data = data.astype(numpy.float32)
     data = numpy.ma.fix_invalid(data)
     logger.info("pre-writing data shape: {}".format(data.shape))
@@ -1385,6 +1386,7 @@ def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, c
     total_blooms = numpy.ndarray((chl_data.shape[2],chl_data.shape[3], int((chl_data.shape[0] - start_date) // date_seperation_per_year)))
     year_true_start_end_array.fill(FILL_VAL)
     blooms_by_date = year_true_start_end_array.copy()
+    blooms_by_duration = year_true_start_end_array.copy()
     total_blooms.fill(FILL_VAL)
     total_blooms_date = total_blooms.copy()
     logger.info("doing sst initiations and correction")
@@ -1415,6 +1417,8 @@ def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, c
             total_blooms[ix,iy] = results[1]
             blooms_by_date[ix, iy] = results[2]
             total_blooms_date[ix,iy] = results[3]
+            blooms_by_duration[ix,iy] = results[4]
+            total_blooms_duration[ix,iy] = results[3]
 
             logger.debug("end duration array")
             logger.debug(year_true_start_end_array[ix,iy])
@@ -1444,13 +1448,15 @@ def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, c
     logger.info(total_blooms.shape)
     probability_array = numpy.apply_along_axis(total_blooms_to_probability, 2, total_blooms)
     probability_array_date = numpy.apply_along_axis(total_blooms_to_probability, 2, total_blooms_date)
+    probability_array_duration = numpy.apply_along_axis(total_blooms_to_probability, 2, total_blooms_duration)
 
     logger.info("done sst initiations and correction")
     logger.info("writing to netcdf")
     #needs to be extended to be able to output 3 files: sorted by calendar year, one with primary and secondary chloropjhyll maximum
     if not csv:
         write_to_output_netcdf(year_true_start_end_array, total_blooms=total_blooms, probability=probability_array, output_location=out_netcdf)
-        write_to_output_netcdf(blooms_by_date, total_blooms=total_blooms_date, probability=probability_array_date, date=True, output_location_date=out_date_netcdf)
+        write_to_output_netcdf(blooms_by_date, total_blooms=total_blooms_date, probability=probability_array_date, date=True, output_location=out_date_netcdf)
+        write_to_output_netcdf(blooms_by_duration, total_blooms=total_blooms_duration, probability=probability_array_duration, date=True, output_location=out_duration_netcdf)
     else:
         write_to_output_csv(year_true_start_end_array, total_blooms=total_blooms, probability=probability_array, output_location=out_netcdf.replace("nc", "csv"))
         write_to_output_csv(blooms_by_date, total_blooms=total_blooms_date, probability=probability_array_date, date=True, output_location_date=out_date_netcdf.replace("nc", "csv"))
@@ -1581,7 +1587,8 @@ def chunk_by_chunk(chunk_idx, chunk):
         #output empty netcdf
         empty_med = numpy.empty((chl_lats.shape[0], chl_lons.shape[0]), dtype=chl_array.dtype) if LAT_IDX >LON_IDX else numpy.empty(shape=(chl_lons.shape[0], chl_lats.shape[0]), dtype=chl_array.dtype)
         create_phenology_netcdf(chl_lons, chl_lats, [1,1], output.replace(".nc", "_by_maxval.nc"), median=empty_med, std=empty_med, max_means=empty_med)
-        create_phenology_netcdf(chl_lons, chl_lats, [1,1], output.replace(".nc", "_by_date.nc"), date=True, median=empty_med, std=empty_med, max_means=empty_med)
+        create_phenology_netcdf(chl_lons, chl_lats, [1,1], output.replace(".nc", "_by_date.nc"), median=empty_med, std=empty_med, max_means=empty_med)
+        create_phenology_netcdf(chl_lons, chl_lats, [1,1], output.replace(".nc", "_by_duration.nc"), median=empty_med, std=empty_med, max_means=empty_med)
         return True
     chl_lock.release()
     if len(chl_array.shape) == 3:
@@ -1684,7 +1691,8 @@ def chunk_by_chunk(chunk_idx, chunk):
         raise Exception("chl data has no mask for its variable data, this will completely break our logic")
     #create the output files
     create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_maxval.nc"), median=chl_median, std=chl_std_dev, max_means=chl_max_means, perc_val_change=perc_val_change)
-    create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_date.nc"), date=True, median=chl_median, std=chl_std_dev, max_means=chl_max_means, perc_val_change=perc_val_change)
+    create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_date.nc"), median=chl_median, std=chl_std_dev, max_means=chl_max_means, perc_val_change=perc_val_change)
+    create_phenology_netcdf(chl_lons, chl_lats, chl_shape, output.replace(".nc", "_by_duration.nc"), median=chl_median, std=chl_std_dev, max_means=chl_max_means, perc_val_change=perc_val_change)
     logger.info("using start date {}".format(chunk_start_date))
     get_multi_year_two_blooms_output(output,
                                     chunk_idx,
@@ -2274,18 +2282,21 @@ if __name__ == "__main__":
 
             final_output_maxval = os.path.join(output_folder, os.path.basename(chl_filename.replace(".nc", "_phenology_{}_by_maxval.nc".format(time_of_run))))
             final_output_dates = os.path.join(output_folder, os.path.basename(chl_filename.replace(".nc", "_phenology_{}_by_date.nc".format(time_of_run))))
+            final_output_duration = os.path.join(output_folder, os.path.basename(chl_filename.replace(".nc", "_phenology_{}_by_duration.nc".format(time_of_run))))
             final_output_intermediate = os.path.join(output_folder, os.path.basename(chl_filename.replace(".nc", "_phenology_{}_intermediate_products.nc".format(time_of_run))))
             logger.info("saving reconstructed files to {}, {}".format(final_output_dates, final_output_maxval))
 
             create_phenology_netcdf(chl_lons, chl_lats, [1,1], final_output_maxval)
             create_phenology_netcdf(chl_lons, chl_lats, [1,1], final_output_dates)
+            create_phenology_netcdf(chl_lons, chl_lats, [1,1], final_output_duration)
             create_intermediate_netcdf(final_output_intermediate, chl_lons, chl_lats)
         else:
             logger.info("skipped file creation")
             final_output_maxval = glob.glob(chl_filename.replace(".nc", "_phenology_{}_by_maxval.nc".format(args.time_glob)))[0]
             final_output_dates = glob.glob(chl_filename.replace(".nc", "_phenology_{}_by_date.nc".format(args.time_glob)))[0]
+            final_output_duration = glob.glob(chl_filename.replace(".nc", "_phenology_{}_by_duration.nc".format(args.time_glob)))[0]
             final_output_intermediate = glob.glob(chl_filename.replace(".nc", "_phenology_{}_intermediate_products.nc".format(args.time_glob)))
-            logger.info(final_output_maxval,final_output_dates,final_output_intermediate)
+            logger.info(final_output_maxval,final_output_dates, final_output_duration, final_output_intermediate)
 
         chl_lons = chl_ds.variables[chl_lon_var][:]
         chl_lats = chl_ds.variables[chl_lat_var][:]

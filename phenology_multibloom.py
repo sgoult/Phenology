@@ -1390,6 +1390,7 @@ def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, c
     blooms_by_duration = year_true_start_end_array.copy()
     total_blooms.fill(FILL_VAL)
     total_blooms_date = total_blooms.copy()
+    total_blooms_duration = total_blooms.copy()
     logger.info("doing sst initiations and correction")
     logger.debug("start date : {}".format(start_date))
     for ix, iy in tqdm.tqdm(numpy.ndindex(chl_data.shape[2], chl_data.shape[3]), total=(chl_data.shape[2] * chl_data.shape[3]), disable=True):

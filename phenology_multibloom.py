@@ -38,6 +38,7 @@ DEFAULT_CHUNKS = 200
 
 output_location = None
 output_location_date = None
+output_location_duration = None
 median_output_name = None
 
 logging.basicConfig()
@@ -256,7 +257,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
     if array_like.mask.all():
         #we can stop here, there's no point continuing with an empty array
-        return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, processing_end_date, date_seperation_per_year) if not x + date_seperation_per_year > processing_end_date],[[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, processing_end_date, date_seperation_per_year) if not x + date_seperation_per_year > processing_end_date]
+        return [[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, processing_end_date, date_seperation_per_year) if not x + date_seperation_per_year > processing_end_date],[[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, processing_end_date, date_seperation_per_year) if not x + date_seperation_per_year > processing_end_date],[[None,None,None,None,None], [None,None,None,None,None]], [None for x in range(start_date, processing_end_date, date_seperation_per_year) if not x + date_seperation_per_year > processing_end_date]
 
     #possibly resort and create new durations based on remaining dates
     #look for sign changes in sst or PAR data, indicating high/low SST or light periods
@@ -663,8 +664,8 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
         else:
             blooms.append([high,low])
         
-        high_dura = high[2] if high[2] else -1000
-        low_dura = low[2] if low[2] else -1000
+        high_dura = high[2] if high[2] and not high[2] == -1000 else 1000000
+        low_dura = low[2] if low[2] and not low[2] == -1000 else 1000000
         if low_dura < high_dura:
             blooms_by_duration.append([low,high])
         else:
@@ -741,7 +742,7 @@ def match_start_end_to_solar_cycle(array_like, chl_sbx_slice, chl_slice, date_se
 
     return blooms, ngds, blooms_by_date, ngds_date, total_blooms, blooms_by_duration
 
-def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_name=None, csv=False):
+def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_name=None, csv=False, filter_time_steps=None, date_seperation=0):
     """
     Creates smoothed sst, currently has a large portion commented out as source file
      is already the centered derivative diff data.
@@ -759,7 +760,17 @@ def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_n
                 logger.info(sst_array[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
             else:
                 logger.info(sst_array[:5,:,debug_pixel_main[1],debug_pixel_main[0]])
-        sst_boxcar = numpy.apply_along_axis(lambda m: numpy.ma.convolve(m, numpy.ones(8)/8, mode='valid'), axis=0, arr=sst_array)
+
+        if not filter_time_steps:
+            days_per_ob = round(365 / date_seperation)
+            filter_time_steps = int(round(days_per_ob * 0.11))
+            filter_time_steps = filter_time_steps if filter_time_steps > 3 else 3
+
+        if (filter_time_steps % 2) == 0:
+            logger.info("adjusting filter so that it is an odd number")
+            filter_time_steps = filter_time_steps - 1 if filter_time_steps -1 >= 3 else 3
+            logger.info("filter shape after adjust: {}".format(filter_time_steps))
+        sst_boxcar = numpy.apply_along_axis(lambda m: numpy.ma.convolve(m, numpy.ones(filter_time_steps)/filter_time_steps, mode='valid'), axis=0, arr=sst_array)
         logger.info("shape after sst sbx")
         logger.info(sst_boxcar.shape)
         fill_arr = numpy.ma.masked_array(numpy.zeros((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])), mask=numpy.ones((1,1,sst_boxcar.shape[2],sst_boxcar.shape[3])))
@@ -862,7 +873,7 @@ def prepare_sst_variables(sst_array, chunk, skip=False, chunk_idx=None, output_n
     else:
         return sst_der.shape, 'float64', sst_der, filled_sst
 
-def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons, modelled_threshold=False, median_threshold=1.2, relative_max_anomaly=False, relative_median_anomaly=False, dynamic_max_means_threshold=0.25, max_means_threshold=0.2, median_filename="median_output.nc", do_fill_chl=True, std_dev_anomaly=False,  max_means_anomaly=False, std_dev_threshold=STD_DEV_THRESHOLD_DEFAULT, chunk_idx=None, output_name=None, date_seperation_per_year=0, csv=False):
+def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons, modelled_threshold=False, median_threshold=1.2, relative_max_anomaly=False, relative_median_anomaly=False, dynamic_max_means_threshold=0.25, max_means_threshold=0.2, median_filename="median_output.nc", do_fill_chl=True, std_dev_anomaly=False,  max_means_anomaly=False, std_dev_threshold=STD_DEV_THRESHOLD_DEFAULT, chunk_idx=None, output_name=None, date_seperation_per_year=0, csv=False, fill_filter_time_steps=None, filter_spatial_steps=5, sbx_filter_time_steps=None):
     """
     Creates the smoothed anomaly chlorophyll data, saves a file to the temporary directory that is read as a mem map later to conserve resources.
     """
@@ -894,9 +905,9 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
         chl_array_fill_val = chl_array.fill_value
     #TODO insert the solar zenith angle establishment, only if handed a modelled input (so add flag for --modelled-input)
     #Here we make a very big assumption that index 0 is january of the year being considered in the chlorophyll array.
+    days_per_ob = round(365 / date_seperation)
+    half_entry = days_per_ob / 2
     if modelled_threshold and not csv:
-        days_per_ob = round(365 / date_seperation)
-        half_entry = days_per_ob / 2
         ob_dates = [(d * days_per_ob) - half_entry for d in range(1,date_seperation+1)]
         #use 75 degrees as cut off
         date_masks = []
@@ -962,17 +973,23 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
     #! after estimating the median, i apply a filling to the chl time-series, e.g., window of 8 time steps, but it would be good to be able to choose other width of the window, e.g., 5 time-steps or 3 time-steps...
     if do_fill_chl:
         #create a 9 x 9 x 9 filter such that central value will be average over time and space
-        k = numpy.ones((5,5,5))
+
+        if not fill_filter_time_steps:
+            fill_filter_time_steps = int(round(days_per_ob * 0.07))
+            fill_filter_time_steps = fill_filter_time_steps if fill_filter_time_steps > 3 else 3
         logger.info("pre filling shape {}".format(chl_array.shape))
-        if not csv:
-            k = numpy.ones((5,5,5))
-        else:
-            k = numpy.ones((5,1,1))
+        if (fill_filter_time_steps % 2) == 0:
+            logger.info("adjusting filter so that it is an odd number")
+            fill_filter_time_steps = fill_filter_time_steps - 1 if fill_filter_time_steps -1 >= 3 else 3
+            logger.info("filter shape after adjust: {}".format(fill_filter_time_steps))
+        k = numpy.ones((fill_filter_time_steps,filter_spatial_steps,filter_spatial_steps))
+        k = k/k.sum()
+        logger.info("fill filter shape (time, lat, lon) {}".format((fill_filter_time_steps,filter_spatial_steps,filter_spatial_steps)))
         chl_reshape = chl_array.copy()
         chl_reshape.shape = (chl_array.shape[0],chl_array.shape[2],chl_array.shape[3])
         chl_reshape = numpy.ma.masked_where(chl_reshape == chl_array_fill_val, chl_reshape)
         #extend values beyond array edge, interpolate over nan values as opposed to filling them with the default fill value (-999999 or something similar)
-        filled_chl = astropy.convolution.convolve(chl_reshape, k, boundary='extend', nan_treatment='interpolate', mask=chl_reshape.mask)/k.sum()
+        filled_chl = astropy.convolution.convolve(chl_reshape, k, boundary='extend', nan_treatment='interpolate', mask=chl_reshape.mask)
         logger.info("post filling shape {}".format(filled_chl.shape))
         filled_chl.shape = chl_array.shape
         logger.info("post filling and reshape shape {}".format(filled_chl.shape))
@@ -1067,9 +1084,19 @@ def prepare_chl_variables(chl_array, chunk, date_seperation, chl_lats, chl_lons,
         ds.variables['chl_der'].setncattr("units", "mg chl m^3")
         ds.variables['chl_der'][:] = chl_der[:]
 
-    #boxcar filter with width of 3 (sbx) should be something like this:
+    #this filter is the opne we should adjust
     logger.info("chl sbx")
-    chl_boxcar = numpy.apply_along_axis(lambda m: numpy.convolve(m, numpy.ones(3)/3, mode='full'), axis=0, arr=chl_der)
+    if not sbx_filter_time_steps:
+        sbx_filter_time_steps = int(round(days_per_ob * 0.04))
+        sbx_filter_time_steps = sbx_filter_time_steps if sbx_filter_time_steps > 3 else 3
+
+    if (sbx_filter_time_steps % 2) == 0:
+        logger.info("adjusting filter so that it is an odd number")
+        sbx_filter_time_steps = sbx_filter_time_steps - 1 if sbx_filter_time_steps -1 >= 3 else 3
+        logger.info("filter shape after adjust: {}".format(sbx_filter_time_steps))
+    
+    logger.info("sbx filter shape (time, lat, lon) {}".format((sbx_filter_time_steps,filter_spatial_steps,filter_spatial_steps)))
+    chl_boxcar = numpy.apply_along_axis(lambda m: numpy.convolve(m, numpy.ones(sbx_filter_time_steps)/sbx_filter_time_steps, mode='full'), axis=0, arr=chl_der)
     if debug_pixel_main[2] == chunk_idx:
         if LON_IDX < LAT_IDX :
             logger.info(chl_boxcar[:5,:,debug_pixel_main[0],debug_pixel_main[1]])
@@ -1344,7 +1371,7 @@ def create_intermediate_netcdf(output_name, chl_lons, chl_lats):
 def total_blooms_to_probability(array_like):
     return numpy.count_nonzero(array_like == 2) / array_like.size
 
-def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=47, start_date=0, reverse_search=20, reference_index=0, out_netcdf=output_location, out_date_netcdf=output_location_date, chunk_idx=None, end_date=False, sst_der=None, chl_boxcar=None, csv=False):
+def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, chl_data, sst_shape, sst_dtype, date_seperation_per_year=47, start_date=0, reverse_search=20, reference_index=0, out_netcdf=output_location, out_date_netcdf=output_location_date, out_duration_netcdf=output_location_duration, chunk_idx=None, end_date=False, sst_der=None, chl_boxcar=None, csv=False):
     """
     Takes an array of prepared variables and identifies the the start, end and maximum of each bloom in the dataset. Iterates over each pixel in a tile.
     """
@@ -1419,7 +1446,7 @@ def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, c
             total_blooms[ix,iy] = results[1]
             blooms_by_date[ix, iy] = results[2]
             total_blooms_date[ix,iy] = results[3]
-            blooms_by_duration[ix,iy] = results[4]
+            blooms_by_duration[ix,iy] = results[5]
             total_blooms_duration[ix,iy] = results[3]
 
             logger.debug("end duration array")
@@ -1428,6 +1455,7 @@ def get_multi_year_two_blooms_output(output_name, chunk, chl_shape, chl_dtype, c
             if e in expected_exceptions:
                 pass
             expected_exceptions.append(e)
+            print(results)
             exc_type, exc_obj, exc_tb = sys.exc_info()
             logger.error(e)
             logger.error(repr(e))
@@ -1668,14 +1696,17 @@ def chunk_by_chunk(chunk_idx, chunk):
                                                                           relative_median_anomaly=do_rel_med_anomaly,
                                                                           do_fill_chl=fill_chl,
                                                                           output_name=output,
-                                                                          date_seperation_per_year=date_seperation_per_year)
+                                                                          date_seperation_per_year=date_seperation_per_year,
+                                                                          fill_filter_time_steps=args.fill_time_filter_steps,
+                                                                          filter_spatial_steps=args.spatial_filter_steps,
+                                                                          sbx_filter_time_steps=args.time_filter_steps)
     logger.info("chl_shape: {}".format(chl_shape))
     logger.info("chl_dtype: {}".format(USE_DTYPE))
 
     chl_ngd = get_chl_ngd(chunk_start_date, date_seperation_per_year, filled_chl)
 
     if args.sst_location:
-        sst_shape, sst_dtype = prepare_sst_variables(sst_array, chunk_idx, skip=args.skip_sst_prep,chunk_idx=chunk_idx, output_name=output)
+        sst_shape, sst_dtype = prepare_sst_variables(sst_array, chunk_idx, skip=args.skip_sst_prep,chunk_idx=chunk_idx, output_name=output, filter_time_steps=args.sst_time_steps, date_seperation=date_seperation_per_year)
         logger.info("sst_shape: {}".format(sst_shape))
         logger.info("sst_dtype: {}".format(USE_DTYPE))
         sst_array = None
@@ -1708,6 +1739,7 @@ def chunk_by_chunk(chunk_idx, chunk):
                                     reverse_search=reverse_search,
                                     reference_index=ref_index,
                                     out_date_netcdf=output.replace(".nc", "_by_date.nc"),
+                                    out_duration_netcdf=output.replace(".nc", "_by_duration.nc"),
                                     out_netcdf=output.replace(".nc", "_by_maxval.nc"),
                                     chunk_idx=chunk_idx)
     
@@ -1721,7 +1753,7 @@ def do_csv(csv_data, csv_filename):
     global start_date
     global debug_pixel_main
     debug_pixel_main= [999,999,999]
-    logger.setLevel(logging.ERROR)
+    logger.setLevel(logging.INFO)
     logger.info("working with a csv file")
 
     output = csv_filename.replace(".csv", "_phenology_{}.csv".format(time_of_run))
@@ -1782,13 +1814,16 @@ def do_csv(csv_data, csv_filename):
                                                                           do_fill_chl=fill_chl,
                                                                           output_name=None,
                                                                           date_seperation_per_year=date_seperation_per_year,
-                                                                          csv=True)
+                                                                          csv=True,
+                                                                          fill_filter_time_steps=args.time_filter_steps,
+                                                                          filter_spatial_steps=1,
+                                                                          sbx_filter_time_steps=args.time_filter_steps)
     logger.info("chl_shape: {}".format(chl_shape))
     logger.info("chl_dtype: {}".format(USE_DTYPE))
 
     chl_ngd = get_chl_ngd(chunk_start_date, date_seperation_per_year, filled_chl)
 
-    sst_shape, sst_dtype, sst_der, filled_sst = prepare_sst_variables(sst_array, 0, skip=args.skip_sst_prep,chunk_idx=0, output_name=None, csv=True)
+    sst_shape, sst_dtype, sst_der, filled_sst = prepare_sst_variables(sst_array, 0, skip=args.skip_sst_prep,chunk_idx=0, output_name=None, csv=True, filter_time_steps=args.sst_time_filter_steps, date_seperation=date_seperation_per_year)
     dates = [str((date_zero_datetime + datetime.timedelta(days=d)).strftime("%d-%m-%Y")) for d in range(0, filled_chl.shape[0])]
 
     filled_data = numpy.column_stack([dates, filled_chl.flatten(), filled_sst.flatten(), chl_boxcar.flatten(), sst_der.flatten()])
@@ -1827,6 +1862,7 @@ def do_csv(csv_data, csv_filename):
                                     reverse_search=reverse_search,
                                     reference_index=ref_index,
                                     out_date_netcdf=output.replace(".csv", "_by_date.nc"),
+                                    out_duration_netcdf=output.replace(".csv", "_by_duration.nc"),
                                     out_netcdf=output.replace(".csv", "_by_maxval.nc"),
                                     chunk_idx=0,
                                     chl_boxcar=chl_boxcar,
@@ -2090,6 +2126,10 @@ if __name__ == "__main__":
     parser.add_argument("--minimum_bloom_seperation_duration", type=int, default=10, help="the minimum days between a two initiation dates, this is converted to timesteps by: timesteps_per_year * (days / 365). Default 15.")
     parser.add_argument("--csv", action='store_true', default=False, help="specify chl_location is a csv file, in format date,chlorophyll,sst - replaces inputs above. dates should either be in int or yyyy/mm/dd")
     parser.add_argument("--chl_fill_val", default=False, help="specify fill value, if not given will take from given netcdf")
+    parser.add_argument("--time_filter_steps", type=int, default=None, help="width of sbx smoothing filter along time dimension (defaults to 4%% of time steps per year)")
+    parser.add_argument("--fill_time_filter_steps", type=int, default=None, help="width of filter along time dimension (defaults to 7%% of time steps per year)")
+    parser.add_argument("--sst_time_filter_steps", type=int, default=None, help="width of filter along time dimension for sst (defaults to 11%% of time steps per year)")
+    parser.add_argument("--spatial_filter_steps", type=int, default=5, help="width of filter along lat/lon dimensions (defaults to 5)")
     args = parser.parse_args()
 
     chl_array_fill_val = args.chl_fill_val
@@ -2105,7 +2145,7 @@ if __name__ == "__main__":
     zlib_compression = not args.no_compress
     chunk_size = args.chunk_size
     do_only_debug_chunk = args.debug_chunk_only
-    time_of_run = datetime.datetime.now().strftime("%Y%m%d%H%M")
+    time_of_run = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     if not args.no_logfile:
         if len(args.chl_location) == 1:
             if args.csv:
@@ -2141,6 +2181,23 @@ if __name__ == "__main__":
     if not args.reverse_search:
         reverse_search = int(round(int(args.date_seperation_per_year) * 0.28))
     logger.info("Reverse search:{}".format(reverse_search))
+
+    if args.sst_time_filter_steps:
+        logger.info("sst time filter steps: {}".format(args.sst_time_filter_steps))
+    else:
+        logger.info("sst time filter steps: None, will be computed as 11%% of total time steps")
+
+    if args.time_filter_steps:
+        logger.info("chl time filter steps: {}".format(args.time_filter_steps))
+    else:
+        logger.info("chl time filter steps: None, will be computed as 4%% of total time steps")
+
+    if args.fill_time_filter_steps:
+        logger.info("chl filling time filter steps: {}".format(args.fill_time_filter_steps))
+    else:
+        logger.info("chl filling time filter steps: None, will be computed as 7%% of total time steps")
+
+    
 
     start_date = None
     start_date = int(args.first_date_index) - 1 if not start_date else start_date
@@ -2308,19 +2365,22 @@ if __name__ == "__main__":
         try:
             maxval_ds = nc.Dataset(final_output_maxval, 'r+')
             date_ds = nc.Dataset(final_output_dates, 'r+')
+            duration_ds = nc.Dataset(final_output_duration, 'r+')
             intermediate_ds = nc.Dataset(final_output_intermediate, 'r+')
         except Exception as e:
-            logger.error("problem found in files {} {} {}".format(maxval_ds,date_ds,intermediate_ds))
+            logger.error("problem found in files {} {} {} {}".format(maxval_ds,date_ds,duration_ds,intermediate_ds))
         
         for chunk_idx, chunk in tqdm.tqdm(chunks_and_idxs):
             maxval_chunk_file = [x for x in files if "chunk{}_".format(chunk_idx) in x and 'maxval' in x]
             date_chunk_file = [x for x in files if "chunk{}_".format(chunk_idx) in x and 'date' in x]
+            duration_chunk_file = [x for x in files if "chunk{}_".format(chunk_idx) in x and 'duration' in x]
             intermediate_chunk_file = [x for x in intermediate_files if "chunk{}_".format(chunk_idx) in x]
             #if we find the tile then add it in
             if len(maxval_chunk_file) and len(date_chunk_file) and len(intermediate_chunk_file):
                 logger.debug("processing chunk files: {}, {}".format(os.path.basename(maxval_chunk_file[0]), os.path.basename(date_chunk_file[0])))
                 maxval_chunk = nc.Dataset(maxval_chunk_file[0], 'r')
                 date_chunk = nc.Dataset(date_chunk_file[0], 'r')
+                duration_chunk = nc.Dataset(duration_chunk_file[0], 'r')
                 intermediate_chunk = nc.Dataset(intermediate_chunk_file[0], 'r')
                 logger.debug("Files read, preparing to write")
                 slc = [slice(None)] * 4
@@ -2342,6 +2402,7 @@ if __name__ == "__main__":
                     try:
                         maxval_ds[var][slc] = maxval_chunk[var][:]
                         date_ds[var][slc] = date_chunk[var][:]
+                        duration_ds[var][slc] = duration_chunk[var][:]
                     except ValueError:
                         logger.warning("Encountered potentially empty file during stitching, this might not be a problem but if you see a large square area of empty data this is likely the cause. Found in chunk {} var {}".format(chunk_idx, var))
 
@@ -2354,6 +2415,7 @@ if __name__ == "__main__":
                 for var in [x for x in maxval_ds.variables.keys() if x in ['median_chlorophyll', 'probability', 'chlorophyll_std_dev', 'max_mean', 'perc_val_change']]:
                     maxval_ds[var][med_prob_slc] = maxval_chunk[var][:]
                     date_ds[var][med_prob_slc] = date_chunk[var][:]
+                    duration_ds[var][med_prob_slc] = duration_chunk[var][:]
 
                 """
                 for var in [x for x in intermediate_ds.variables.keys() if not x in intermediate_ds.dimensions.keys() and x not in ['zen']]:
@@ -2362,19 +2424,23 @@ if __name__ == "__main__":
                 logger.debug("Written, closing.")
                 maxval_chunk.close()
                 date_chunk.close()
+                duration_chunk.close()
                 intermediate_chunk.close()
                 logger.debug("Removing chunk files.")
                 if not args.no_delete:
                     os.remove(maxval_chunk_file[0])
                     os.remove(date_chunk_file[0])
+                    os.remove(duration_chunk_file[0])
         try:
             maxval_ds['TIME'][:] = range(1, time_shape)
             date_ds['TIME'][:] = range(1, time_shape)
+            duration_ds['TIME'][:] = range(1, time_shape)
         except:
             logger.error(f"time shape isnt definied...")
         intermediate_ds.close()
         maxval_ds.close()
         date_ds.close()
+        duration_ds.close()
 
         logger.info("completed stitching of phenology products, files have been output, now creating intermediate products netcdf. This will take a long time (80 seconds per iteration).")
         try:

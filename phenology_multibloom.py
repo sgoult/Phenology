@@ -1584,6 +1584,7 @@ def chunk_by_chunk(chunk_idx, chunk):
     global start_date
     global debug_chunk
     global do_only_debug_chunk
+    global output_folder
 
     chunk_start_date = start_date
 
@@ -1598,7 +1599,7 @@ def chunk_by_chunk(chunk_idx, chunk):
     slc[LON_IDX] = slice(x[0], x[1])
     slc[LAT_IDX] = slice(y[0], y[1])
 
-    output = chl_filename.replace(".nc", "_phenology_{}_chunk{}.nc".format(time_of_run, chunk_idx))
+    output = os.path.join(output_folder, os.path.basename(chl_filename).replace(".nc", "_phenology_{}_chunk{}.nc".format(time_of_run, chunk_idx)))
     
     chl_lock.acquire()
     chl_array = chl_ds.variables[chl_variable][slc]
@@ -1706,7 +1707,7 @@ def chunk_by_chunk(chunk_idx, chunk):
     chl_ngd = get_chl_ngd(chunk_start_date, date_seperation_per_year, filled_chl)
 
     if args.sst_location:
-        sst_shape, sst_dtype = prepare_sst_variables(sst_array, chunk_idx, skip=args.skip_sst_prep,chunk_idx=chunk_idx, output_name=output, filter_time_steps=args.sst_time_steps, date_seperation=date_seperation_per_year)
+        sst_shape, sst_dtype = prepare_sst_variables(sst_array, chunk_idx, skip=args.skip_sst_prep,chunk_idx=chunk_idx, output_name=output, filter_time_steps=args.sst_time_filter_steps, date_seperation=date_seperation_per_year)
         logger.info("sst_shape: {}".format(sst_shape))
         logger.info("sst_dtype: {}".format(USE_DTYPE))
         sst_array = None
@@ -2149,11 +2150,11 @@ if __name__ == "__main__":
     if not args.no_logfile:
         if len(args.chl_location) == 1:
             if args.csv:
-                handler = logging.FileHandler(args.chl_location[0].replace(".csv", "_phenology_{}.logfile".format(time_of_run)))
+                handler = logging.FileHandler(os.path.join(output_folder, os.path.basename(args.chl_location[0]).replace(".csv", "_phenology_{}.logfile".format(time_of_run))))
                 logger.info("initilised logfile at {}".format(args.chl_location[0].replace(".csv", "_phenology_{}.logfile".format(time_of_run))))
             else:
-                handler = logging.FileHandler(args.chl_location[0].replace(".nc", "_phenology_{}.logfile".format(time_of_run)))
-                logger.info("initilised logfile at {}".format(args.chl_location[0].replace(".nc", "_phenology_{}.logfile".format(time_of_run))))
+                handler = logging.FileHandler(os.path.join(output_folder, os.path.basename(args.chl_location[0]).replace(".nc", "_phenology_{}.logfile".format(time_of_run))))
+                logger.info("initilised logfile at {}".format(os.path.join(output_folder, os.path.basename(args.chl_location[0]).replace(".nc", "_phenology_{}.logfile".format(time_of_run)))))
         else:
             handler = logging.FileHandler("phenology_bulk_run_{}.logfile".format(time_of_run))
             logger.info("initilised logfile at {}".format("phenology_bulk_run_{}.logfile".format(time_of_run)))
@@ -2359,9 +2360,10 @@ if __name__ == "__main__":
         chl_lons = chl_ds.variables[chl_lon_var][:]
         chl_lats = chl_ds.variables[chl_lat_var][:]
 
-        intermediate_files = glob.glob(chl_filename.replace(".nc","_phenology_{}_chunk*_intermediate*.nc").format(time_of_run))
-        files = glob.glob(chl_filename.replace(".nc","_phenology_{}_chunk*_*by*.nc").format(time_of_run))
+        intermediate_files = glob.glob(os.path.join(output_folder, os.path.basename(chl_filename).replace(".nc","_phenology_{}_chunk*_intermediate*.nc").format(time_of_run)))
+        files = glob.glob(os.path.join(output_folder, os.path.basename(chl_filename).replace(".nc","_phenology_{}_chunk*_*by*.nc").format(time_of_run)))
         logger.info("stitching chunk files")
+        logger.info("found {} files to stitch".format(len(files)))
         try:
             maxval_ds = nc.Dataset(final_output_maxval, 'r+')
             date_ds = nc.Dataset(final_output_dates, 'r+')
@@ -2406,11 +2408,9 @@ if __name__ == "__main__":
                     except ValueError:
                         logger.warning("Encountered potentially empty file during stitching, this might not be a problem but if you see a large square area of empty data this is likely the cause. Found in chunk {} var {}".format(chunk_idx, var))
 
-                    try:
-                        #get the shape of time here
-                        time_shape = date_chunk[var].shape[0] + 1 
-                    except:
-                        continue
+
+                    #get the shape of time here
+                    time_shape = date_chunk[var].shape[0] + 1 
 
                 for var in [x for x in maxval_ds.variables.keys() if x in ['median_chlorophyll', 'probability', 'chlorophyll_std_dev', 'max_mean', 'perc_val_change']]:
                     maxval_ds[var][med_prob_slc] = maxval_chunk[var][:]
@@ -2435,8 +2435,9 @@ if __name__ == "__main__":
             maxval_ds['TIME'][:] = range(1, time_shape)
             date_ds['TIME'][:] = range(1, time_shape)
             duration_ds['TIME'][:] = range(1, time_shape)
-        except:
-            logger.error(f"time shape isnt definied...")
+        except Exception as e:
+            logger.error(e)
+            logger.error(f"time shape isnt defined...")
         intermediate_ds.close()
         maxval_ds.close()
         date_ds.close()

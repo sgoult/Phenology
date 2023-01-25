@@ -1,0 +1,29 @@
+{
+    "description": "A python script to derive algal bloom phenology from chlorophyll and sea surface temperature EO products.", 
+    "license": "CC-BY-SA", 
+    "title": "sgoult/Phenology: v1.0.0", 
+    "version": "v1.0.0", 
+    "upload_type": "software", 
+    "publication_date": "2023-01-25", 
+    "creators": [
+        {
+            "name": "Marie-Fanny Racault"
+        }, 
+        {
+            "name": "Stephen Goult"
+        }
+    ], 
+    "access_right": "open", 
+    "related_identifiers": [
+        {
+            "scheme": "url", 
+            "identifier": "https://github.com/sgoult/Phenology/tree/v1.0.0", 
+            "relation": "isSupplementTo"
+        }, 
+        {
+            "scheme": "doi", 
+            "identifier": "10.5281/zenodo.7567893", 
+            "relation": "isVersionOf"
+        }
+    ]
+}
